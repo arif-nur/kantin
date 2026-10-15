@@ -1,0 +1,46 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "pesanan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pemesanId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pesanan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kantinId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pesanan",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "statusPesanan", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "menu",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kantinId", "order": "ASCENDING" },
+        { "fieldPath": "kategori", "order": "ASCENDING" },
+        { "fieldPath": "hargaMenu", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transaksi",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "statusTransaksi", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

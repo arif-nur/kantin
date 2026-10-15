@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'admin' || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // USERS COLLECTION
+    // Users can read their own profile, admins can read all
+    // Users cannot modify their role
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'pemesan';
+      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // KANTIN COLLECTION
+    // Public read, only admin can create/update/delete
+    match /kantin/{kantinId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // MENU COLLECTION
+    // Public read, only admin can create/update/delete
+    match /menu/{menuId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // PESANAN COLLECTION
+    // Pemesan can read only their orders, admin can read all
+    // Creation via client only allows status 'menunggu' with matching pemesanId
+    // Status transitions must be handled by admin or trusted server transaction
+    match /pesanan/{pesananId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.pemesanId == request.auth.uid
+                    && request.resource.data.statusPesanan == 'menunggu'
+                    && request.resource.data.statusTransaksi == 'menunggu';
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid && request.resource.data.statusPesanan == 'dibatalkan' && resource.data.statusPesanan == 'menunggu');
+      allow delete: if isAdmin();
+
+      // SUBCOLLECTION: items
+      match /items/{itemId} {
+        allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/pesanan/$(pesananId)).data.pemesanId == request.auth.uid);
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/pesanan/$(pesananId)).data.pemesanId == request.auth.uid;
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // TRANSAKSI COLLECTION
+    // Transactions can be read by the owner or admin
+    // Modification restricted to admin or server webhook
+    match /transaksi/{transaksiId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.pemesanId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

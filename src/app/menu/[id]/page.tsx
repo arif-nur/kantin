@@ -1,0 +1,257 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Heart, Star, Minus, Plus, ShoppingBag, CheckCircle, AlertCircle } from "lucide-react";
+import { DataService } from "@/lib/data-service";
+import { MenuItem } from "@/types";
+import { formatRupiah } from "@/lib/utils";
+import { useCart } from "@/lib/context/CartContext";
+import FloatingBasket from "@/components/navigation/FloatingBasket";
+
+export default function MenuDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const { addItem, updateQuantity, items } = useCart();
+
+  const [menu, setMenu] = useState<MenuItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [quantity, setQuantity] = useState(1);
+  const [selectedSize, setSelectedSize] = useState("Regular");
+  const [isLiked, setIsLiked] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const menuId = params.id as string;
+
+  useEffect(() => {
+    async function loadItem() {
+      const data = await DataService.getMenuById(menuId);
+      setMenu(data);
+      setLoading(false);
+    }
+    if (menuId) {
+      loadItem();
+    }
+  }, [menuId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f8faf8] flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!menu) {
+    return (
+      <div className="min-h-screen bg-[#f8faf8] p-6 flex flex-col items-center justify-center text-center">
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Menu tidak ditemukan</h2>
+        <Link href="/menu" className="text-sm font-semibold text-brand-600 underline">
+          Kembali ke Daftar Menu
+        </Link>
+      </div>
+    );
+  }
+
+  const isOutOfStock = menu.stok <= 0 || !menu.isAvailable;
+
+  const handleAddToCart = () => {
+    if (isOutOfStock) return;
+    const res = addItem(menu);
+    if (!res.success && res.message) {
+      setNotification(res.message);
+    } else {
+      setNotification(`✓ ${quantity}x ${menu.namaMenu} (${selectedSize}) ditambahkan!`);
+      // Update quantity if more than 1
+      if (quantity > 1) {
+        updateQuantity(menu.id, quantity);
+      }
+    }
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f8faf8] pb-32">
+      {/* Toast Alert */}
+      {notification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900/90 text-white text-xs sm:text-sm font-semibold px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-fade-in border border-gray-700">
+          <AlertCircle className="w-4 h-4 text-emerald-400" />
+          <span>{notification}</span>
+        </div>
+      )}
+
+      {/* Hero Image Section */}
+      <div className="relative w-full h-80 sm:h-96 bg-gray-200">
+        <Image
+          src={menu.gambarUrl}
+          alt={menu.namaMenu}
+          fill
+          priority
+          sizes="(max-width: 768px) 100vw, 800px"
+          className="object-cover"
+        />
+
+        {/* Top Floating Action Icons */}
+        <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+          <button
+            onClick={() => router.back()}
+            className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md text-gray-700 flex items-center justify-center shadow-md hover:bg-white transition"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setIsLiked(!isLiked)}
+            className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition ${
+              isLiked
+                ? "bg-red-500 text-white"
+                : "bg-white/90 backdrop-blur-md text-gray-700 hover:text-red-500"
+            }`}
+          >
+            <Heart className={`w-5 h-5 ${isLiked ? "fill-white" : ""}`} />
+          </button>
+        </div>
+
+        {/* Floating Rating Pill */}
+        <div className="absolute -bottom-4 right-8 bg-[#ccf437] text-gray-900 px-3.5 py-1.5 rounded-full shadow-md font-extrabold text-xs flex items-center gap-1 z-10 border border-white">
+          <Star className="w-3.5 h-3.5 fill-gray-900 text-gray-900" />
+          <span>4.9</span>
+        </div>
+      </div>
+
+      {/* Main Details Container */}
+      <div className="max-w-2xl mx-auto px-5 pt-8">
+        {/* Title & Price Header */}
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              {menu.kodeMenu} • {menu.kategori}
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-0.5">
+              {menu.namaMenu}
+            </h1>
+            <p className="text-xl sm:text-2xl font-black text-brand-600 mt-1">
+              {formatRupiah(menu.hargaMenu)}
+            </p>
+          </div>
+
+          {/* Stepper (- 01 +) */}
+          <div className="flex items-center gap-3 bg-gray-100/90 rounded-2xl p-1.5 border border-gray-200/60">
+            <button
+              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+              disabled={quantity <= 1 || isOutOfStock}
+              className="w-8 h-8 rounded-xl bg-white text-gray-700 flex items-center justify-center shadow-sm disabled:opacity-40 hover:bg-gray-50 transition"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-sm font-extrabold text-gray-900 min-w-[20px] text-center">
+              {String(quantity).padStart(2, "0")}
+            </span>
+            <button
+              onClick={() => setQuantity(Math.min(menu.stok, quantity + 1))}
+              disabled={quantity >= menu.stok || isOutOfStock}
+              className="w-8 h-8 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-sm disabled:opacity-40 hover:bg-brand-700 transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Stock Information Alert */}
+        <div className="flex items-center gap-2 mb-6 text-xs">
+          {isOutOfStock ? (
+            <span className="text-red-600 font-bold bg-red-50 px-3 py-1 rounded-xl">
+              Stok Sedang Habis
+            </span>
+          ) : (
+            <span className="text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-xl flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              Tersedia • Stok sisa {menu.stok} porsi
+            </span>
+          )}
+        </div>
+
+        {/* Description */}
+        <div className="mb-6">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-2">
+            Deskripsi Menu
+          </h2>
+          <p className="text-sm text-gray-600 leading-relaxed bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            {menu.deskripsi}
+          </p>
+        </div>
+
+        {/* Size Selection */}
+        <div className="mb-8">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
+            Pilihan Ukuran
+          </h2>
+          <div className="flex items-center gap-3">
+            {["Regular", "Jumbo", "Spesial"].map((size) => (
+              <button
+                key={size}
+                onClick={() => setSelectedSize(size)}
+                className={`py-2 px-5 rounded-2xl text-xs font-extrabold transition-all ${
+                  selectedSize === size
+                    ? "bg-[#1b432a] text-white shadow-md scale-105"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Customer Comments & Reviews */}
+        <div className="mb-10">
+          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
+            Ulasan Mahasiswa (4.9/5.0)
+          </h2>
+          <div className="space-y-3">
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-emerald-100 text-brand-800 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                AR
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-gray-900">Arief (XII IPA 1)</h4>
+                  <div className="flex text-amber-400">
+                    {"★".repeat(5)}
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  Enak banget, porsinya pas buat istirahat siang dan sambalnya mantap!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Add to Cart Floating CTA */}
+        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-auto sm:max-w-2xl sm:w-full z-40">
+          <button
+            onClick={handleAddToCart}
+            disabled={isOutOfStock}
+            className={`w-full py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition-all transform active:scale-95 ${
+              isOutOfStock
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-[#1b432a] hover:bg-[#153621] text-white"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-emerald-300" />
+              {isOutOfStock ? "Stok Habis" : "Tambah ke Keranjang"}
+            </span>
+            <span className="text-emerald-300">
+              {formatRupiah(menu.hargaMenu * quantity)}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <FloatingBasket />
+    </div>
+  );
+}
