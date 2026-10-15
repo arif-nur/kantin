@@ -4,17 +4,35 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Heart, Star, Minus, Plus, ShoppingBag, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  Heart,
+  Star,
+  Minus,
+  Plus,
+  ShoppingBag,
+  CheckCircle,
+  AlertCircle,
+  MessageSquare,
+  Send,
+} from "lucide-react";
 import { DataService } from "@/lib/data-service";
-import { MenuItem } from "@/types";
-import { formatRupiah } from "@/lib/utils";
+import { MenuItem, MenuReview } from "@/types";
+import { formatRupiah, formatTanggal } from "@/lib/utils";
 import { useCart } from "@/lib/context/CartContext";
-import FloatingBasket from "@/components/navigation/FloatingBasket";
+import { useAuth } from "@/lib/context/AuthContext";
+
+const SIZES = [
+  { name: "Regular", label: "Regular", extra: 0 },
+  { name: "Jumbo", label: "Jumbo (+3rb)", extra: 3000 },
+  { name: "Spesial", label: "Spesial (+5rb)", extra: 5000 },
+];
 
 export default function MenuDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { addItem, updateQuantity, items } = useCart();
+  const { userProfile } = useAuth();
 
   const [menu, setMenu] = useState<MenuItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +41,19 @@ export default function MenuDetailPage() {
   const [isLiked, setIsLiked] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
+  // Reviews state
+  const [reviews, setReviews] = useState<MenuReview[]>([]);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [newRating, setNewRating] = useState(5);
+  const [newComment, setNewComment] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+
   const menuId = params.id as string;
+
+  const loadReviews = async () => {
+    const list = await DataService.getMenuReviews(menuId);
+    setReviews(list);
+  };
 
   useEffect(() => {
     async function loadItem() {
@@ -33,6 +63,7 @@ export default function MenuDetailPage() {
     }
     if (menuId) {
       loadItem();
+      loadReviews();
     }
   }, [menuId]);
 
@@ -56,21 +87,62 @@ export default function MenuDetailPage() {
   }
 
   const isOutOfStock = menu.stok <= 0 || !menu.isAvailable;
+  const currentSizeObj = SIZES.find((s) => s.name === selectedSize) || SIZES[0];
+  const unitPrice = menu.hargaMenu + currentSizeObj.extra;
 
   const handleAddToCart = () => {
     if (isOutOfStock) return;
-    const res = addItem(menu);
+    const modifiedMenu: MenuItem = {
+      ...menu,
+      namaMenu:
+        selectedSize === "Regular" ? menu.namaMenu : `${menu.namaMenu} (${selectedSize})`,
+      hargaMenu: unitPrice,
+    };
+    const res = addItem(modifiedMenu);
     if (!res.success && res.message) {
       setNotification(res.message);
     } else {
-      setNotification(`✓ ${quantity}x ${menu.namaMenu} (${selectedSize}) ditambahkan!`);
-      // Update quantity if more than 1
+      setNotification(`✓ ${quantity}x ${modifiedMenu.namaMenu} ditambahkan ke keranjang!`);
       if (quantity > 1) {
-        updateQuantity(menu.id, quantity);
+        updateQuantity(modifiedMenu.id, quantity);
       }
     }
     setTimeout(() => setNotification(null), 3000);
   };
+
+  const handleAddReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+    if (!userProfile) {
+      setNotification("Silakan masuk akun terlebih dahulu untuk menulis ulasan.");
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      await DataService.addMenuReview({
+        menuId,
+        userId: userProfile.uid,
+        userName: userProfile.namaPemesan,
+        rating: newRating,
+        komentar: newComment.trim(),
+      });
+      setNewComment("");
+      setShowReviewForm(false);
+      await loadReviews();
+      setNotification("✓ Terima kasih! Ulasan Anda berhasil ditambahkan.");
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err: any) {
+      alert("Gagal menambahkan ulasan: " + err.message);
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const avgRating =
+    reviews.length > 0
+      ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
+      : null;
 
   return (
     <div className="min-h-screen bg-[#f8faf8] pb-32">
@@ -132,7 +204,7 @@ export default function MenuDetailPage() {
               {menu.namaMenu}
             </h1>
             <p className="text-xl sm:text-2xl font-black text-brand-600 mt-1">
-              {formatRupiah(menu.hargaMenu)}
+              {formatRupiah(unitPrice)}
             </p>
           </div>
 
@@ -185,20 +257,20 @@ export default function MenuDetailPage() {
         {/* Size Selection */}
         <div className="mb-8">
           <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
-            Pilihan Ukuran
+            Pilihan Porsi / Ukuran
           </h2>
           <div className="flex items-center gap-3">
-            {["Regular", "Jumbo", "Spesial"].map((size) => (
+            {SIZES.map((size) => (
               <button
-                key={size}
-                onClick={() => setSelectedSize(size)}
-                className={`py-2 px-5 rounded-2xl text-xs font-extrabold transition-all ${
-                  selectedSize === size
+                key={size.name}
+                onClick={() => setSelectedSize(size.name)}
+                className={`py-2 px-4 rounded-2xl text-xs font-extrabold transition-all ${
+                  selectedSize === size.name
                     ? "bg-[#1b432a] text-white shadow-md scale-105"
                     : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {size}
+                {size.label}
               </button>
             ))}
           </div>
@@ -206,52 +278,125 @@ export default function MenuDetailPage() {
 
         {/* Customer Comments & Reviews */}
         <div className="mb-10">
-          <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">
-            Ulasan Mahasiswa (4.9/5.0)
-          </h2>
-          <div className="space-y-3">
-            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-emerald-100 text-brand-800 font-bold text-xs flex items-center justify-center flex-shrink-0">
-                AR
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+              Ulasan Mahasiswa {avgRating ? `(${avgRating}/5.0)` : `(${reviews.length})`}
+            </h2>
+            <button
+              onClick={() => setShowReviewForm(!showReviewForm)}
+              className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{showReviewForm ? "Tutup Form" : "Tulis Ulasan"}</span>
+            </button>
+          </div>
+
+          {/* Review Input Form */}
+          {showReviewForm && (
+            <form
+              onSubmit={handleAddReview}
+              className="bg-white p-4 rounded-3xl border border-gray-100 shadow-card mb-4 space-y-3 animate-fade-in"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-700">Rating Bintang:</span>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      type="button"
+                      key={star}
+                      onClick={() => setNewRating(star)}
+                      className={`text-lg transition ${
+                        star <= newRating ? "text-amber-400" : "text-gray-300"
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-bold text-gray-900">Arief (XII IPA 1)</h4>
-                  <div className="flex text-amber-400">
-                    {"★".repeat(5)}
+                <textarea
+                  rows={2}
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Ceritakan rasa dan porsi menu ini..."
+                  className="w-full text-xs p-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-gray-50"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview}
+                className="py-2 px-4 bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{submittingReview ? "Mengirim..." : "Kirim Ulasan"}</span>
+              </button>
+            </form>
+          )}
+
+          {/* Reviews List */}
+          <div className="space-y-3">
+            {reviews.length === 0 ? (
+              <div className="bg-white p-6 rounded-2xl border border-gray-100 text-center text-xs text-gray-400">
+                Belum ada ulasan untuk menu ini. Jadilah yang pertama memberikan ulasan!
+              </div>
+            ) : (
+              reviews.map((rev) => (
+                <div
+                  key={rev.id}
+                  className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-start gap-3"
+                >
+                  <div className="w-9 h-9 rounded-full bg-emerald-100 text-brand-800 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                    {rev.userName?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-gray-900 truncate">
+                        {rev.userName}
+                      </h4>
+                      <span className="text-[10px] text-gray-400">
+                        {formatTanggal(rev.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex text-amber-400 text-xs my-0.5">
+                      {"★".repeat(rev.rating)}
+                      <span className="text-gray-200">{"★".repeat(5 - rev.rating)}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                      {rev.komentar}
+                    </p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                  Enak banget, porsinya pas buat istirahat siang dan sambalnya mantap!
-                </p>
-              </div>
-            </div>
+              ))
+            )}
           </div>
         </div>
 
         {/* Add to Cart Floating CTA */}
-        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-auto sm:max-w-2xl sm:w-full z-40">
-          <button
-            onClick={handleAddToCart}
-            disabled={isOutOfStock}
-            className={`w-full py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition-all transform active:scale-95 ${
-              isOutOfStock
-                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-[#1b432a] hover:bg-[#153621] text-white"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5 text-emerald-300" />
-              {isOutOfStock ? "Stok Habis" : "Tambah ke Keranjang"}
-            </span>
-            <span className="text-emerald-300">
-              {formatRupiah(menu.hargaMenu * quantity)}
-            </span>
-          </button>
+        <div className="fixed bottom-6 left-0 right-0 z-40 px-4 pointer-events-none">
+          <div className="max-w-2xl mx-auto pointer-events-auto">
+            <button
+              onClick={handleAddToCart}
+              disabled={isOutOfStock}
+              className={`w-full py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition-all transform active:scale-95 ${
+                isOutOfStock
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-[#1b432a] hover:bg-[#153621] text-white"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-emerald-300" />
+                {isOutOfStock ? "Stok Habis" : "Tambah ke Keranjang"}
+              </span>
+              <span className="text-emerald-300">
+                {formatRupiah(unitPrice * quantity)}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
-
-      <FloatingBasket />
     </div>
   );
 }

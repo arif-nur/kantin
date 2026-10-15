@@ -15,17 +15,28 @@ import {
   User,
   Store,
   Info,
+  Lock,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useCart } from "@/lib/context/CartContext";
 import { useAuth } from "@/lib/context/AuthContext";
 import { DataService } from "@/lib/data-service";
-import { formatRupiah } from "@/lib/utils";
+import { formatRupiah, isKantinOperational } from "@/lib/utils";
+
+function buildDynamicQrisPayload(canteenName: string, amount: number): string {
+  const cleanName = (canteenName || "KANTIN SEKOLAH").toUpperCase().replace(/[^A-Z0-9 ]/g, "").slice(0, 22);
+  const nameLen = String(cleanName.length).padStart(2, "0");
+  const amountStr = String(amount);
+  const amountLen = String(amountStr.length).padStart(2, "0");
+  const refCode = `TRX${Date.now().toString().slice(-4)}`;
+
+  return `00020101021226670014ID.LINKAJA.WWW011893600914000000000002150000000000000000303UMI51440014ID.CO.QRIS.WWW0215ID102002123456752045812530336054${amountLen}${amountStr}5802ID59${nameLen}${cleanName}6007JAKARTA62070703${refCode}6304`;
+}
 
 export default function CheckoutPage() {
   const router = useRouter();
   const { items, currentKantinId, currentKantinNama, totalPrice, clearCart } = useCart();
-  const { userProfile } = useAuth();
+  const { userProfile, loading: authLoading } = useAuth();
 
   const [metodeTransaksi, setMetodeTransaksi] = useState<"QRIS" | "tunai">("QRIS");
   const [catatan, setCatatan] = useState("");
@@ -33,12 +44,12 @@ export default function CheckoutPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [qrisQrCodeUrl, setQrisQrCodeUrl] = useState<string>("");
 
-  // Generate QR Code data URL for QRIS simulation
+  // Generate QR Code data URL dynamically for current canteen & amount
   useEffect(() => {
     async function makeQR() {
       try {
-        const dummyQrisPayload = `00020101021226670014ID.LINKAJA.WWW011893600914000000000002150000000000000000303UMI51440014ID.CO.QRIS.WWW0215ID1020021234567520458125303360540${totalPrice}5802ID5914KANTIN BAROKAH6007JAKARTA62070703A016304`;
-        const url = await QRCode.toDataURL(dummyQrisPayload, {
+        const dynamicPayload = buildDynamicQrisPayload(currentKantinNama || "Kantin Sekolah", totalPrice);
+        const url = await QRCode.toDataURL(dynamicPayload, {
           margin: 1,
           width: 260,
           color: {
@@ -54,7 +65,52 @@ export default function CheckoutPage() {
     if (totalPrice > 0) {
       makeQR();
     }
-  }, [totalPrice]);
+  }, [totalPrice, currentKantinNama]);
+
+  // Auth Guard: Enforce login before checkout
+  useEffect(() => {
+    if (!authLoading && !userProfile) {
+      router.replace("/login?redirect=/checkout");
+    }
+  }, [userProfile, authLoading, router]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#f8faf8] flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-10 h-10 border-4 border-[#1b432a] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs font-bold text-gray-500">Memverifikasi status akun Anda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen bg-[#f8faf8] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 text-center shadow-card border border-gray-100 space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[#1b432a] flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h2 className="text-base sm:text-lg font-bold text-gray-900">
+            Masuk untuk Melanjutkan Pesanan
+          </h2>
+          <p className="text-xs text-gray-500 leading-relaxed max-w-xs mx-auto">
+            Anda harus masuk ke akun pemesan terlebih dahulu agar pesanan dapat tercatat atas nama Anda.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/login?redirect=/checkout"
+              className="inline-flex items-center justify-center gap-2 w-full py-3 px-4 bg-[#1b432a] text-white font-bold rounded-2xl text-xs hover:bg-[#153621] transition shadow-xs"
+            >
+              <User className="w-4 h-4" />
+              <span>Masuk Sekarang</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -80,13 +136,26 @@ export default function CheckoutPage() {
     if (submitting) return;
 
     if (!userProfile) {
-      router.push("/login");
+      router.push("/login?redirect=/checkout");
       return;
     }
     const currentProfile = userProfile;
 
     setSubmitting(true);
     setErrorMessage(null);
+
+    // Validate operational hours before placing order
+    try {
+      const settings = await DataService.getSettings();
+      const op = isKantinOperational(settings.jamBuka, settings.jamTutup, settings.isStoreOpenManual);
+      if (!op.isOpen) {
+        setErrorMessage(settings.pesanTutup || op.reason || "Kantin sedang tutup saat ini.");
+        setSubmitting(false);
+        return;
+      }
+    } catch (e) {
+      // Continue if offline
+    }
 
     try {
       const result = await DataService.checkout({
@@ -146,17 +215,17 @@ export default function CheckoutPage() {
               <User className="w-3.5 h-3.5 text-brand-600" />
               Data Pemesan
             </h3>
-            <span className="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-              {userProfile ? userProfile.kodePemesan : "Tamu / Mahasiswa"}
+            <span className="text-[10px] font-bold text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-full">
+              {userProfile.kodePemesan || "PEMESAN"}
             </span>
           </div>
           <div className="space-y-1">
             <p className="text-sm font-extrabold text-gray-900">
-              {userProfile ? userProfile.namaPemesan : "Arief (Mahasiswa)"}
+              {userProfile.namaPemesan}
             </p>
             <p className="text-xs text-gray-500">
-              {userProfile ? userProfile.email : "arief@mahasiswa.ac.id"} •{" "}
-              {userProfile ? userProfile.alamatPemesan : "Teknik Informatika (Semester 5)"}
+              {userProfile.email}
+              {userProfile.alamatPemesan ? ` • ${userProfile.alamatPemesan}` : ""}
             </p>
           </div>
         </div>
@@ -272,6 +341,10 @@ export default function CheckoutPage() {
           {/* QRIS Instructions Box */}
           {metodeTransaksi === "QRIS" && (
             <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200/70 text-center animate-fade-in space-y-3">
+              <div className="text-xs font-black text-gray-800">
+                <span>QRIS Merchant: </span>
+                <span className="text-brand-700">{currentKantinNama || "Kantin Sekolah"}</span>
+              </div>
               <div className="inline-block p-2 bg-white rounded-2xl shadow-sm border border-gray-100">
                 {qrisQrCodeUrl ? (
                   <img
@@ -284,7 +357,7 @@ export default function CheckoutPage() {
                 )}
               </div>
               <p className="text-xs text-gray-600 font-medium">
-                Pindai kode QRIS di atas melalui aplikasi e-wallet atau m-Banking Anda.
+                Pindai kode QRIS di atas untuk membayar <strong className="text-gray-900">{formatRupiah(totalPrice)}</strong>.
               </p>
               <div className="text-[11px] text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-100 flex items-center justify-center gap-1.5">
                 <Info className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
@@ -309,18 +382,20 @@ export default function CheckoutPage() {
         </div>
 
         {/* Submit Order Floating CTA */}
-        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-auto sm:max-w-2xl sm:w-full z-40">
-          <button
-            onClick={handleCheckout}
-            disabled={submitting}
-            className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition transform active:scale-98 disabled:opacity-50"
-          >
-            <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-              {submitting ? "Memproses Pesanan..." : "Konfirmasi & Pesan Sekarang"}
-            </span>
-            <span className="text-emerald-300 font-black">{formatRupiah(totalPrice)}</span>
-          </button>
+        <div className="fixed bottom-6 left-0 right-0 z-40 px-4 pointer-events-none">
+          <div className="max-w-2xl mx-auto pointer-events-auto">
+            <button
+              onClick={handleCheckout}
+              disabled={submitting}
+              className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition transform active:scale-98 disabled:opacity-50"
+            >
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                {submitting ? "Memproses Pesanan..." : "Konfirmasi & Pesan Sekarang"}
+              </span>
+              <span className="text-emerald-300 font-black">{formatRupiah(totalPrice)}</span>
+            </button>
+          </div>
         </div>
       </main>
     </div>

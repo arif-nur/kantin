@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -21,11 +21,31 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { DataService } from "@/lib/data-service";
 
 export default function AdminHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const { userProfile, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [pendingCount, setPendingCount] = useState(0);
+  const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+
+  useEffect(() => {
+    const unsub = DataService.subscribePendingOrdersCount((count) => {
+      setPendingCount(count);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleGlobalSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (globalSearch.trim()) {
+      router.push(`/admin/pesanan?search=${encodeURIComponent(globalSearch.trim())}`);
+    }
+  };
 
   const links = [
     { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -37,6 +57,10 @@ export default function AdminHeader() {
     { href: "/admin/laporan", label: "Laporan Penjualan", icon: FileBarChart },
     { href: "/admin/pengaturan", label: "Pengaturan", icon: Settings },
   ];
+
+  const adminInitials = userProfile?.namaPemesan
+    ? userProfile.namaPemesan.slice(0, 2).toUpperCase()
+    : "AD";
 
   return (
     <>
@@ -53,14 +77,16 @@ export default function AdminHeader() {
         </div>
 
         {/* Global Search Bar */}
-        <div className="hidden sm:flex items-center relative w-80">
+        <form onSubmit={handleGlobalSearch} className="hidden sm:flex items-center relative w-80">
           <Search className="w-4 h-4 text-gray-400 absolute left-3" />
           <input
             type="text"
-            placeholder="Cari menu, nomor pesanan, pemesan..."
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
+            placeholder="Cari pesanan (B001), menu, pemesan..."
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition"
           />
-        </div>
+        </form>
 
         {/* Right side controls */}
         <div className="flex items-center gap-3">
@@ -74,22 +100,64 @@ export default function AdminHeader() {
 
           {/* Notification icon */}
           <div className="relative">
-            <button className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition">
+            <button
+              onClick={() => setShowNotificationMenu(!showNotificationMenu)}
+              className="relative w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition"
+            >
               <Bell className="w-4 h-4" />
-              <span className="w-2 h-2 rounded-full bg-brand-500 absolute top-2 right-2 ring-2 ring-white"></span>
+              {pendingCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
             </button>
+
+            {/* Notification Dropdown */}
+            {showNotificationMenu && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 p-3 z-50 animate-fade-in">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                  <span className="text-xs font-extrabold text-gray-900">Notifikasi Pesanan</span>
+                  <span className="text-[10px] font-bold text-brand-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                    {pendingCount} baru
+                  </span>
+                </div>
+                <div className="py-2.5">
+                  {pendingCount > 0 ? (
+                    <div className="p-2.5 rounded-xl bg-amber-50 text-amber-900 text-xs font-medium space-y-1">
+                      <p className="font-bold">Ada {pendingCount} pesanan menunggu!</p>
+                      <p className="text-[11px] text-amber-700">
+                        Harap segera konfirmasi pesanan masuk dari mahasiswa.
+                      </p>
+                      <Link
+                        href="/admin/pesanan"
+                        onClick={() => setShowNotificationMenu(false)}
+                        className="inline-block mt-1 text-[11px] font-extrabold text-amber-950 underline"
+                      >
+                        Buka Antrean Pesanan &rarr;
+                      </Link>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 py-3 text-center">
+                      Semua antrean pesanan telah diproses.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Admin Avatar */}
           <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
             <div className="w-8 h-8 rounded-full bg-[#082215] text-emerald-400 font-extrabold text-xs flex items-center justify-center shadow-xs">
-              AD
+              {adminInitials}
             </div>
             <div className="hidden sm:block text-left text-xs">
               <p className="font-bold text-gray-900 leading-tight">
                 {userProfile?.namaPemesan || "Admin Kantin"}
               </p>
-              <p className="text-[10px] text-gray-400 font-semibold uppercase">Super Admin</p>
+              <p className="text-[10px] text-gray-400 font-semibold uppercase">
+                {userProfile?.role === "admin" ? "Super Admin" : "Pengelola"}
+              </p>
             </div>
           </div>
         </div>

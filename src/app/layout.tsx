@@ -1,8 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Montserrat } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/context/AuthContext";
 import { CartProvider } from "@/lib/context/CartContext";
 import PWAInstaller from "@/components/pwa/PWAInstaller";
+
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-montserrat",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Kantin Sekolah - Pemesanan Makanan & Minuman Online",
@@ -42,7 +50,7 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
-      <body className="antialiased min-h-screen bg-[#f7faf7] text-gray-900 selection:bg-brand-500 selection:text-white">
+      <body className={`${montserrat.className} ${montserrat.variable} antialiased min-h-screen bg-[#f7faf7] text-gray-900 selection:bg-brand-500 selection:text-white`}>
         <AuthProvider>
           <CartProvider>
             <PWAInstaller />

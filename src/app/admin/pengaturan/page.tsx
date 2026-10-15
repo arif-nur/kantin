@@ -20,7 +20,21 @@ export default function AdminPengaturanPage() {
   const [seedResult, setSeedResult] = useState<string | null>(null);
   const [jamBuka, setJamBuka] = useState("07:00");
   const [jamTutup, setJamTutup] = useState("15:00");
+  const [isStoreOpenManual, setIsStoreOpenManual] = useState(true);
+  const [pesanTutup, setPesanTutup] = useState("");
+  const [savingSettings, setSavingSettings] = useState(false);
   const [savedSettings, setSavedSettings] = useState(false);
+
+  React.useEffect(() => {
+    async function loadSettings() {
+      const s = await DataService.getSettings();
+      setJamBuka(s.jamBuka || "07:00");
+      setJamTutup(s.jamTutup || "15:00");
+      setIsStoreOpenManual(s.isStoreOpenManual !== false);
+      setPesanTutup(s.pesanTutup || "Kantin sedang tutup. Silakan kembali saat jam operasional.");
+    }
+    loadSettings();
+  }, []);
 
   const handleSeedData = async () => {
     setSeeding(true);
@@ -40,10 +54,23 @@ export default function AdminPengaturanPage() {
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavedSettings(true);
-    setTimeout(() => setSavedSettings(false), 2500);
+    setSavingSettings(true);
+    try {
+      await DataService.updateSettings({
+        jamBuka,
+        jamTutup,
+        isStoreOpenManual,
+        pesanTutup,
+      });
+      setSavedSettings(true);
+      setTimeout(() => setSavedSettings(false), 3000);
+    } catch (err: any) {
+      alert("Gagal menyimpan pengaturan: " + err.message);
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const handleClearPWACache = async () => {
@@ -142,12 +169,43 @@ export default function AdminPengaturanPage() {
               </div>
             </div>
 
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isStoreOpenManual}
+                  onChange={(e) => setIsStoreOpenManual(e.target.checked)}
+                  className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
+                />
+                <span className="text-xs font-bold text-gray-800">
+                  Kantin Sedang Buka / Menerima Pesanan
+                </span>
+              </label>
+              <p className="text-[11px] text-gray-400 mt-0.5 ml-6">
+                Hapus centang jika kantin ingin diliburkan atau ditutup mendadak.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Pesan Notifikasi Saat Kantin Tutup
+              </label>
+              <input
+                type="text"
+                value={pesanTutup}
+                onChange={(e) => setPesanTutup(e.target.value)}
+                placeholder="Contoh: Kantin sedang tutup. Silakan kembali saat jam istirahat."
+                className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-brand-500 outline-none"
+              />
+            </div>
+
             <button
               type="submit"
-              className="px-4 py-2 bg-[#082215] text-emerald-400 font-extrabold text-xs rounded-xl hover:bg-[#05170e] transition flex items-center gap-1.5"
+              disabled={savingSettings}
+              className="px-4 py-2 bg-[#082215] text-emerald-400 font-extrabold text-xs rounded-xl hover:bg-[#05170e] transition flex items-center gap-1.5 disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Simpan Jam Operasional</span>
+              <span>{savingSettings ? "Menyimpan..." : "Simpan Pengaturan Operasional"}</span>
             </button>
           </form>
         </div>

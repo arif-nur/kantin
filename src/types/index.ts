@@ -58,6 +58,7 @@ export interface OrderItem {
   jumlahPesanan: number;
   subtotalItem: number;
   gambarUrlSnapshot: string;
+  sizeOption?: string;
 }
 
 export interface Order {
@@ -96,4 +97,24 @@ export interface Transaction {
 export interface CartItem {
   menu: MenuItem;
   quantity: number;
+  sizeOption?: string;
+  additionalPrice?: number;
+}
+
+export interface MenuReview {
+  id: string;
+  menuId: string;
+  userId: string;
+  userName: string;
+  rating: number; // 1 to 5
+  komentar: string;
+  createdAt: any;
+}
+
+export interface KantinSettings {
+  jamBuka: string; // e.g. "07:00"
+  jamTutup: string; // e.g. "15:00"
+  isStoreOpenManual: boolean;
+  pesanTutup?: string;
+  updatedAt?: any;
 }

@@ -11,9 +11,19 @@ import {
   where,
   orderBy,
   serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase/client";
-import { Kantin, MenuItem, Order, OrderItem, Transaction, UserProfile } from "@/types";
+import {
+  Kantin,
+  MenuItem,
+  Order,
+  OrderItem,
+  Transaction,
+  UserProfile,
+  MenuReview,
+  KantinSettings,
+} from "@/types";
 
 export const DataService = {
   // Clear any legacy demo data from localStorage
@@ -50,6 +60,20 @@ export const DataService = {
       });
     } catch (e) {
       console.error("Gagal mengubah role user di Firestore:", e);
+      throw e;
+    }
+  },
+
+  async updateUserProfile(uid: string, data: Partial<UserProfile>) {
+    try {
+      const payload: any = {
+        ...data,
+        updatedAt: serverTimestamp(),
+      };
+      delete payload.uid;
+      await updateDoc(doc(db, "users", uid), payload);
+    } catch (e) {
+      console.error("Gagal mengubah profil user di Firestore:", e);
       throw e;
     }
   },
@@ -216,15 +240,36 @@ export const DataService = {
     statusPesanan: Order["statusPesanan"],
     statusTransaksi?: Order["statusTransaksi"]
   ) {
+    const effectiveTrxStatus =
+      statusTransaksi ||
+      (statusPesanan === "selesai" ? "berhasil" : statusPesanan === "dibatalkan" ? "gagal" : undefined);
+
     const updatePayload: any = {
       statusPesanan,
       updatedAt: serverTimestamp(),
     };
-    if (statusTransaksi) {
-      updatePayload.statusTransaksi = statusTransaksi;
+    if (effectiveTrxStatus) {
+      updatePayload.statusTransaksi = effectiveTrxStatus;
     }
 
     await updateDoc(doc(db, "pesanan", orderId), updatePayload);
+
+    // Sync corresponding transaction document in Firestore
+    if (effectiveTrxStatus) {
+      try {
+        const trxQuery = query(collection(db, "transaksi"), where("pesananId", "==", orderId));
+        const trxSnap = await getDocs(trxQuery);
+        for (const tDoc of trxSnap.docs) {
+          await updateDoc(tDoc.ref, {
+            statusTransaksi: effectiveTrxStatus,
+            waktuPembayaran: effectiveTrxStatus === "berhasil" ? serverTimestamp() : null,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } catch (err) {
+        console.error("Gagal sinkronisasi transaksi:", err);
+      }
+    }
 
     // If cancelled, restore stock atomically in Firestore
     if (statusPesanan === "dibatalkan") {
@@ -390,6 +435,120 @@ export const DataService = {
     } catch (err: any) {
       console.error("Firestore checkout error:", err);
       return { success: false, error: err.message || "Gagal memproses pesanan di database." };
+    }
+  },
+
+  // ================= REALTIME SUBSCRIPTIONS =================
+  subscribeOrder(orderId: string, callback: (order: Order | null) => void) {
+    return onSnapshot(
+      doc(db, "pesanan", orderId),
+      async (snap) => {
+        if (snap.exists()) {
+          const order = { ...snap.data(), id: snap.id } as Order;
+          try {
+            const itemsSnap = await getDocs(collection(db, "pesanan", orderId, "items"));
+            if (!itemsSnap.empty) {
+              order.items = itemsSnap.docs.map((d) => d.data() as OrderItem);
+            }
+          } catch (e) {
+            // ignore
+          }
+          callback(order);
+        } else {
+          callback(null);
+        }
+      },
+      (err) => {
+        console.error("subscribeOrder error:", err);
+      }
+    );
+  },
+
+  subscribeOrders(callback: (orders: Order[]) => void) {
+    return onSnapshot(
+      collection(db, "pesanan"),
+      (snap) => {
+        const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+        list.sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        callback(list);
+      },
+      (err) => {
+        console.error("subscribeOrders error:", err);
+      }
+    );
+  },
+
+  subscribePendingOrdersCount(callback: (count: number) => void) {
+    const q = query(collection(db, "pesanan"), where("statusPesanan", "==", "menunggu"));
+    return onSnapshot(
+      q,
+      (snap) => {
+        callback(snap.size);
+      },
+      (err) => {
+        console.error("subscribePendingOrdersCount error:", err);
+      }
+    );
+  },
+
+  // ================= REVIEWS & RATINGS =================
+  async getMenuReviews(menuId: string): Promise<MenuReview[]> {
+    try {
+      const q = query(collection(db, "menu_reviews"), where("menuId", "==", menuId));
+      const snap = await getDocs(q);
+      const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as MenuReview));
+      return list.sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+    } catch (e) {
+      console.error("Gagal mengambil ulasan menu:", e);
+      return [];
+    }
+  },
+
+  async addMenuReview(data: Omit<MenuReview, "id" | "createdAt">): Promise<MenuReview> {
+    const revRef = doc(collection(db, "menu_reviews"));
+    const newRev: MenuReview = {
+      ...data,
+      id: revRef.id,
+      createdAt: new Date().toISOString(),
+    };
+    await setDoc(revRef, {
+      ...newRev,
+      createdAt: serverTimestamp(),
+    });
+    return newRev;
+  },
+
+  // ================= SETTINGS OPERASIONAL =================
+  async getSettings(): Promise<KantinSettings> {
+    const defaultSettings: KantinSettings = {
+      jamBuka: "07:00",
+      jamTutup: "15:00",
+      isStoreOpenManual: true,
+      pesanTutup: "Kantin sedang tutup. Silakan kembali saat jam operasional (07:00 - 15:00).",
+    };
+    try {
+      const snap = await getDoc(doc(db, "settings", "operational"));
+      if (snap.exists()) {
+        return { ...defaultSettings, ...snap.data() } as KantinSettings;
+      }
+      return defaultSettings;
+    } catch (e) {
+      console.error("Gagal mengambil pengaturan kantin:", e);
+      return defaultSettings;
+    }
+  },
+
+  async updateSettings(data: Partial<KantinSettings>): Promise<void> {
+    try {
+      const ref = doc(db, "settings", "operational");
+      await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) {
+      console.error("Gagal menyimpan pengaturan kantin:", e);
+      throw e;
     }
   },
 };

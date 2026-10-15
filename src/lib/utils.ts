@@ -42,3 +42,31 @@ export function formatTanggal(timestamp: any): string {
 export function generateKode(prefix: string, sequence: number): string {
   return `${prefix}${String(sequence).padStart(3, "0")}`;
 }
+
+export function isKantinOperational(
+  jamBuka = "07:00",
+  jamTutup = "15:00",
+  isStoreOpenManual = true
+): { isOpen: boolean; reason?: string } {
+  if (!isStoreOpenManual) {
+    return { isOpen: false, reason: "Kantin sedang ditutup sementara oleh pengelola." };
+  }
+
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const [bukaH, bukaM] = (jamBuka || "07:00").split(":").map(Number);
+  const [tutupH, tutupM] = (jamTutup || "15:00").split(":").map(Number);
+
+  const startMinutes = (bukaH ?? 7) * 60 + (bukaM ?? 0);
+  const endMinutes = (tutupH ?? 15) * 60 + (tutupM ?? 0);
+
+  if (currentMinutes < startMinutes || currentMinutes > endMinutes) {
+    return {
+      isOpen: false,
+      reason: `Kantin berada di luar jam operasional (${jamBuka || "07:00"} - ${jamTutup || "15:00"}).`,
+    };
+  }
+
+  return { isOpen: true };
+}

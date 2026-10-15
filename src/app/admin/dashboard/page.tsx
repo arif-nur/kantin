@@ -67,9 +67,16 @@ export default function AdminDashboardPage() {
   ).length;
   const readyOrders = orders.filter((o) => o.statusPesanan === "siap_diambil").length;
 
-  const successfulRevenue = transactions
+  // Calculate revenue reliably from orders with successful payment or completed status, as well as transactions ledger
+  const revenueFromOrders = orders
+    .filter((o) => o.statusTransaksi === "berhasil" || o.statusPesanan === "selesai")
+    .reduce((sum, o) => sum + (o.totalHarga || o.subtotal || 0), 0);
+
+  const revenueFromTransactions = transactions
     .filter((t) => t.statusTransaksi === "berhasil")
     .reduce((sum, t) => sum + t.jumlahPembayaran, 0);
+
+  const successfulRevenue = Math.max(revenueFromOrders, revenueFromTransactions);
 
   const activeMenuItemsCount = menuList.filter((m) => m.isAvailable && m.stok > 0).length;
   const lowStockItems = menuList.filter((m) => m.stok <= 5);

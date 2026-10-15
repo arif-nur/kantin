@@ -49,7 +49,24 @@ export default function AdminLaporanPage() {
     const matchKantin = selectedKantinId === "semua" || o.kantinId === selectedKantinId;
     const matchStatus = selectedStatus === "semua" || o.statusPesanan === selectedStatus;
     const matchMetode = selectedMetode === "semua" || o.metodeTransaksi === selectedMetode;
-    return matchKantin && matchStatus && matchMetode;
+
+    let matchDate = true;
+    if (selectedDateRange !== "semua" && o.createdAt) {
+      const orderDate = new Date(o.createdAt);
+      const now = new Date();
+      if (selectedDateRange === "hari_ini") {
+        matchDate = orderDate.toDateString() === now.toDateString();
+      } else if (selectedDateRange === "minggu_ini") {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        matchDate = orderDate >= weekAgo;
+      } else if (selectedDateRange === "bulan_ini") {
+        matchDate =
+          orderDate.getMonth() === now.getMonth() &&
+          orderDate.getFullYear() === now.getFullYear();
+      }
+    }
+
+    return matchKantin && matchStatus && matchMetode && matchDate;
   });
 
   const totalRevenue = filteredOrders
@@ -142,7 +159,7 @@ export default function AdminLaporanPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="block text-[11px] font-bold text-gray-500 mb-1">Pilih Kantin</label>
             <select
@@ -187,6 +204,22 @@ export default function AdminLaporanPage() {
               <option value="semua">Semua Metode</option>
               <option value="QRIS">QRIS</option>
               <option value="tunai">Tunai</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-gray-500 mb-1">
+              Rentang Waktu
+            </label>
+            <select
+              value={selectedDateRange}
+              onChange={(e) => setSelectedDateRange(e.target.value)}
+              className="w-full text-xs px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 font-semibold focus:ring-2 focus:ring-brand-500 outline-none"
+            >
+              <option value="semua">Semua Waktu</option>
+              <option value="hari_ini">Hari Ini</option>
+              <option value="minggu_ini">7 Hari Terakhir</option>
+              <option value="bulan_ini">Bulan Ini</option>
             </select>
           </div>
         </div>

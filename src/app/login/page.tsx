@@ -1,15 +1,17 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { User, Lock, Mail, AlertCircle, ArrowRight, ShieldCheck } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Lock, Mail, AlertCircle, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
 import AppLogo from "@/components/ui/AppLogo";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
-  const { login, resetPassword } = useAuth();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get("redirect");
+  const { user, userProfile, loading: authLoading, login, resetPassword } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,6 +20,29 @@ export default function LoginPage() {
   const [resetModal, setResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!authLoading && (userProfile || user)) {
+      if (userProfile?.role === "admin") {
+        router.replace("/admin/dashboard");
+      } else if (redirectUrl) {
+        router.replace(redirectUrl);
+      } else {
+        router.replace("/akun");
+      }
+    }
+  }, [user, userProfile, authLoading, router, redirectUrl]);
+
+  if (authLoading || (!authLoading && (userProfile || user))) {
+    return (
+      <div className="min-h-screen bg-[#f7faf7] flex items-center justify-center p-4">
+        <div className="animate-pulse flex flex-col items-center gap-3">
+          <AppLogo className="w-12 h-12 rounded-2xl shadow-sm" />
+          <p className="text-xs font-semibold text-gray-500">Mengarahkan ke akun Anda...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +57,8 @@ export default function LoginPage() {
       const profile = await login(email, password);
       if (profile.role === "admin") {
         router.push("/admin/dashboard");
+      } else if (redirectUrl) {
+        router.push(redirectUrl);
       } else {
         router.push("/menu");
       }
@@ -39,7 +66,7 @@ export default function LoginPage() {
       setError(
         err.message?.includes("invalid-credential")
           ? "Email atau kata sandi tidak sesuai."
-          : "Gagal masuk. Silakan periksa kembali akun Anda atau gunakan tombol cepat Demo."
+          : "Gagal masuk. Silakan periksa kembali akun Anda."
       );
     } finally {
       setLoading(false);
@@ -65,12 +92,22 @@ export default function LoginPage() {
             <AppLogo className="w-16 h-16 rounded-2xl shadow-floating" />
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">
-            Kantin Sekolah PWA
+            Kantin Sekolah
           </h1>
-          <p className="text-xs text-gray-400 mt-1">
-            Masuk untuk memesan makanan atau kelola kantin
+          <p className="text-xs text-gray-500 mt-1">
+            {redirectUrl === "/checkout"
+              ? "Masuk akun terlebih dahulu untuk melanjutkan pesanan Anda"
+              : "Masuk untuk memesan makanan atau kelola kantin"}
           </p>
         </div>
+
+        {/* Notice if redirected from checkout */}
+        {redirectUrl === "/checkout" && (
+          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-[#1b432a] text-xs font-semibold flex items-center gap-2.5">
+            <Lock className="w-4 h-4 text-[#1b432a] flex-shrink-0" />
+            <span>Selesaikan login untuk melanjutkan pembayaran ke kantin.</span>
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
@@ -134,7 +171,10 @@ export default function LoginPage() {
         {/* Register link */}
         <p className="text-center text-xs text-gray-500 pt-2 border-t border-gray-100">
           Belum punya akun mahasiswa?{" "}
-          <Link href="/register" className="font-extrabold text-brand-600 hover:underline">
+          <Link
+            href={redirectUrl ? `/register?redirect=${encodeURIComponent(redirectUrl)}` : "/register"}
+            className="font-extrabold text-brand-600 hover:underline"
+          >
             Daftar Sekarang
           </Link>
         </p>
@@ -178,5 +218,22 @@ export default function LoginPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#f7faf7] flex items-center justify-center p-4">
+          <div className="animate-pulse flex flex-col items-center gap-3">
+            <AppLogo className="w-12 h-12 rounded-2xl shadow-sm" />
+            <p className="text-xs font-semibold text-gray-500">Memuat halaman login...</p>
+          </div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

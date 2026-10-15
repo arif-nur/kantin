@@ -38,19 +38,26 @@ export default function AdminPesananPage() {
   const [statusFilter, setStatusFilter] = useState<string>("semua");
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("search");
+      if (q) setSearchQuery(q);
+    }
+
+    setLoading(true);
+    const unsubscribe = DataService.subscribeOrders((realtimeOrders) => {
+      setOrders(realtimeOrders);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const loadOrders = async () => {
     setLoading(true);
-    await DataService.initIfEmpty();
     const data = await DataService.getOrders();
     setOrders(data);
     setLoading(false);
   };
-
-  useEffect(() => {
-    loadOrders();
-    const interval = setInterval(loadOrders, 8000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleUpdateStatus = async (
     orderId: string,

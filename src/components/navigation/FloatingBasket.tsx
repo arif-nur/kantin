@@ -11,13 +11,13 @@ export default function FloatingBasket() {
   const pathname = usePathname();
   const { totalItems, totalPrice } = useCart();
 
-  // Show only on /menu or /menu/[id] when there are items
-  if (totalItems === 0 || pathname.startsWith("/keranjang") || pathname.startsWith("/checkout") || pathname.startsWith("/admin")) {
+  // Show only on /menu catalog when there are items
+  if (totalItems === 0 || pathname !== "/menu") {
     return null;
   }
 
   return (
-    <div className="fixed bottom-16 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-8 sm:w-96 z-40 animate-fade-in">
+    <div className="fixed bottom-20 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-8 sm:w-96 z-40 animate-fade-in">
       <Link
         href="/keranjang"
         className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-3.5 px-5 rounded-3xl shadow-floating flex items-center justify-between transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] border border-emerald-800/40"

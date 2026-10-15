@@ -116,6 +116,13 @@ export default function StudentHeader({
 
                   <div className="py-1">
                     <Link
+                      href="/akun"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="block px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 rounded-xl"
+                    >
+                      Akun & Profil Saya
+                    </Link>
+                    <Link
                       href="/pesanan-saya"
                       onClick={() => setShowProfileMenu(false)}
                       className="block px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 rounded-xl"

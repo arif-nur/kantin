@@ -17,14 +17,17 @@ export default function StudentBottomNav() {
     { href: "/menu", label: "Menu", icon: UtensilsCrossed },
     { href: "/pesanan-saya", label: "Pesanan", icon: Receipt },
     { href: "/keranjang", label: "Keranjang", icon: ShoppingBag, badge: totalItems },
-    { href: "/login", label: "Akun", icon: User },
+    { href: "/akun", label: "Akun", icon: User },
   ];
 
   return (
     <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-gray-100 px-4 py-2 flex items-center justify-around shadow-lg">
       {navItems.map((item) => {
         const Icon = item.icon;
-        const isActive = pathname === item.href || (item.href === "/menu" && pathname === "/");
+        const isActive =
+          pathname === item.href ||
+          (item.href === "/menu" && pathname === "/") ||
+          (item.href === "/akun" && (pathname === "/akun" || pathname === "/login" || pathname === "/register"));
         return (
           <Link
             key={item.href}

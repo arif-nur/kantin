@@ -31,7 +31,7 @@ const config: Config = {
         }
       },
       fontFamily: {
-        sans: ["var(--font-outfit)", "system-ui", "sans-serif"],
+        sans: ["var(--font-montserrat)", "Montserrat", "system-ui", "sans-serif"],
       },
       borderRadius: {
         "2xl": "1rem",

@@ -44,10 +44,11 @@ export default function OrderDetailPage() {
 
   useEffect(() => {
     if (orderId) {
-      loadOrder();
-      // Poll every 5s for real-time status update
-      const timer = setInterval(loadOrder, 5000);
-      return () => clearInterval(timer);
+      const unsubscribe = DataService.subscribeOrder(orderId, (updatedOrder) => {
+        setOrder(updatedOrder);
+        setLoading(false);
+      });
+      return () => unsubscribe();
     }
   }, [orderId]);
 

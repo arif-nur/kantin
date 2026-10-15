@@ -9,7 +9,7 @@ import {
   sendPasswordResetEmail,
   onAuthStateChanged,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase/client";
 import { UserProfile, UserRole } from "@/types";
 import { useRouter } from "next/navigation";
@@ -30,6 +30,7 @@ interface AuthContextType {
   }) => Promise<UserProfile>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -179,6 +180,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     await sendPasswordResetEmail(auth, email);
   };
 
+  const updateProfile = async (data: Partial<UserProfile>) => {
+    if (!user) throw new Error("Pengguna belum login");
+    try {
+      const userDocRef = doc(db, "users", user.uid);
+      const updatePayload: any = {
+        ...data,
+        updatedAt: serverTimestamp(),
+      };
+      delete updatePayload.uid;
+      delete updatePayload.role;
+      await updateDoc(userDocRef, updatePayload);
+      setUserProfile((prev) => (prev ? { ...prev, ...data, updatedAt: new Date().toISOString() } : null));
+    } catch (err: any) {
+      console.error("Gagal update profil pengguna:", err);
+      throw err;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -191,6 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         register,
         logout,
         resetPassword,
+        updateProfile,
       }}
     >
       {children}

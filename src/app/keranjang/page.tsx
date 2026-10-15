@@ -4,24 +4,65 @@ import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Store, ChevronRight } from "lucide-react";
+import { ArrowLeft, Trash2, Plus, Minus, ShoppingBag, Store, ChevronRight, Lock } from "lucide-react";
 import { useCart } from "@/lib/context/CartContext";
+import { useAuth } from "@/lib/context/AuthContext";
 import { formatRupiah } from "@/lib/utils";
 import StudentBottomNav from "@/components/navigation/StudentBottomNav";
 
+import { DataService } from "@/lib/data-service";
+import { MenuItem } from "@/types";
+
 export default function KeranjangPage() {
   const router = useRouter();
-  const { items, updateQuantity, removeItem, clearCart, subtotal, totalPrice, totalItems, currentKantinNama } =
-    useCart();
+  const {
+    items,
+    addItem,
+    updateQuantity,
+    removeItem,
+    clearCart,
+    subtotal,
+    totalPrice,
+    totalItems,
+    currentKantinId,
+    currentKantinNama,
+  } = useCart();
+  const { userProfile } = useAuth();
 
-  const recommendations = [
-    { name: "Es Teh Manis", price: 5000, img: "https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=200&q=80" },
-    { name: "Kerupuk Gurih", price: 2000, img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=200&q=80" },
-    { name: "Es Jeruk Peras", price: 7000, img: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=200&q=80" },
-  ];
+  const [recommendedMenu, setRecommendedMenu] = React.useState<MenuItem[]>([]);
+
+  const handleProceedCheckout = () => {
+    if (!userProfile) {
+      router.push("/login?redirect=/checkout");
+      return;
+    }
+    router.push("/checkout");
+  };
+
+  React.useEffect(() => {
+    async function loadRecommendations() {
+      try {
+        if (!currentKantinId) {
+          const kList = await DataService.getKantinList();
+          if (kList.length > 0) {
+            const list = await DataService.getMenuList(kList[0].id);
+            setRecommendedMenu(list.filter((m) => m.isAvailable && m.stok > 0).slice(0, 3));
+          }
+        } else {
+          const list = await DataService.getMenuList(currentKantinId);
+          const inCartIds = new Set(items.map((i) => i.menu.id));
+          const filtered = list.filter((m) => !inCartIds.has(m.id) && m.isAvailable && m.stok > 0);
+          setRecommendedMenu(filtered.slice(0, 3));
+        }
+      } catch (e) {
+        console.error("Gagal memuat rekomendasi menu:", e);
+      }
+    }
+    loadRecommendations();
+  }, [currentKantinId, items]);
 
   return (
-    <div className="min-h-screen bg-[#f8faf8] pb-32">
+    <div className="min-h-screen bg-[#f8faf8] pb-48 sm:pb-32">
       {/* Top Bar */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 h-16 flex items-center justify-between">
         <button
@@ -81,6 +122,22 @@ export default function KeranjangPage() {
                 </p>
               </div>
             </div>
+
+            {/* Auth Notification if not logged in */}
+            {!userProfile && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-900 font-semibold min-w-0">
+                  <Lock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span className="truncate">Anda belum masuk ke akun pemesan.</span>
+                </div>
+                <Link
+                  href="/login?redirect=/checkout"
+                  className="text-[#1b432a] font-extrabold hover:underline flex-shrink-0"
+                >
+                  Masuk Akun
+                </Link>
+              </div>
+            )}
 
             {/* Cart Items List */}
             <div className="space-y-3">
@@ -148,25 +205,39 @@ export default function KeranjangPage() {
                 </Link>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                {recommendations.map((rec, i) => (
-                  <Link
-                    key={i}
-                    href="/menu"
-                    className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm text-center flex flex-col items-center hover:scale-[1.02] transition"
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden relative mb-1.5 bg-gray-100">
-                      <Image src={rec.img} alt={rec.name} fill sizes="48px" className="object-cover" />
+              {recommendedMenu.length > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {recommendedMenu.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm text-center flex flex-col items-center justify-between hover:shadow-md transition"
+                    >
+                      <div className="w-12 h-12 rounded-full overflow-hidden relative mb-1.5 bg-gray-100">
+                        <Image
+                          src={rec.gambarUrl}
+                          alt={rec.namaMenu}
+                          fill
+                          sizes="48px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-800 truncate w-full">
+                        {rec.namaMenu}
+                      </span>
+                      <span className="text-[10px] font-semibold text-brand-600 mt-0.5">
+                        {formatRupiah(rec.hargaMenu)}
+                      </span>
+                      <button
+                        onClick={() => addItem(rec, currentKantinNama || undefined)}
+                        className="mt-2 text-[10px] font-extrabold px-2.5 py-1 bg-emerald-50 text-brand-700 hover:bg-brand-600 hover:text-white rounded-xl transition flex items-center gap-1 shadow-xs"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Tambah</span>
+                      </button>
                     </div>
-                    <span className="text-[11px] font-bold text-gray-800 truncate w-full">
-                      {rec.name}
-                    </span>
-                    <span className="text-[10px] font-semibold text-brand-600 mt-0.5">
-                      {formatRupiah(rec.price)}
-                    </span>
-                  </Link>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Payment Summary */}
@@ -191,19 +262,21 @@ export default function KeranjangPage() {
             </div>
 
             {/* Checkout Button */}
-            <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-auto sm:max-w-2xl sm:w-full z-40">
-              <button
-                onClick={() => router.push("/checkout")}
-                className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition transform active:scale-98"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-black">
-                    {totalItems}
-                  </span>
-                  <span>Lanjut ke Pembayaran</span>
-                </div>
-                <span className="text-emerald-300 font-black">{formatRupiah(totalPrice)}</span>
-              </button>
+            <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 z-40 px-4 pointer-events-none">
+              <div className="max-w-2xl mx-auto pointer-events-auto">
+                <button
+                  onClick={handleProceedCheckout}
+                  className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-4 px-6 rounded-3xl font-extrabold text-sm sm:text-base flex items-center justify-between shadow-floating transition transform active:scale-98"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-black">
+                      {userProfile ? totalItems : <Lock className="w-3.5 h-3.5" />}
+                    </span>
+                    <span>{userProfile ? "Lanjut ke Pembayaran" : "Masuk untuk Checkout"}</span>
+                  </div>
+                  <span className="text-emerald-300 font-black">{formatRupiah(totalPrice)}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
