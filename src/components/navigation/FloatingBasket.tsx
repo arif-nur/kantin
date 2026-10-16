@@ -5,39 +5,44 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/context/CartContext";
 import { formatRupiah } from "@/lib/utils";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, ArrowRight } from "lucide-react";
 
 export default function FloatingBasket() {
   const pathname = usePathname();
   const { totalItems, totalPrice } = useCart();
 
-  // Show only on /menu catalog when there are items
-  if (totalItems === 0 || pathname !== "/menu") {
+  // Show only on /menu or /menu/[id] catalog when there are items
+  if (totalItems === 0 || (!pathname.startsWith("/menu") && pathname !== "/")) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-20 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-8 sm:w-96 z-40 animate-fade-in">
-      <Link
-        href="/keranjang"
-        className="w-full bg-[#1b432a] hover:bg-[#153621] text-white py-3.5 px-5 rounded-3xl shadow-floating flex items-center justify-between transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] border border-emerald-800/40"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-[#22c55e] text-white font-extrabold text-sm flex items-center justify-center shadow-sm">
-            {totalItems}
+    <aside aria-label="Ringkasan Keranjang Belanja" className="fixed bottom-20 sm:bottom-6 left-0 right-0 z-40 px-4 pointer-events-none">
+      <div className="max-w-xl mx-auto pointer-events-auto">
+        <Link
+          href="/keranjang"
+          className="w-full bg-[#0f3822] hover:bg-[#0c2e1c] text-white p-3.5 sm:p-4 rounded-2xl shadow-xl flex items-center justify-between transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 border border-emerald-700/50 group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white font-extrabold text-sm flex items-center justify-center shadow-sm">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[11px] text-emerald-300 font-semibold leading-tight">
+                {totalItems} Menu Dipilih
+              </div>
+              <div className="text-sm sm:text-base font-extrabold text-white">
+                {formatRupiah(totalPrice)}
+              </div>
+            </div>
           </div>
-          <div className="font-bold text-sm tracking-wide flex items-center gap-1.5">
-            <ShoppingBag className="w-4 h-4 text-emerald-300" />
-            <span>Keranjang Saya</span>
-          </div>
-        </div>
 
-        <div className="text-right">
-          <span className="font-extrabold text-sm sm:text-base text-emerald-300">
-            {formatRupiah(totalPrice)}
-          </span>
-        </div>
-      </Link>
-    </div>
+          <div className="flex items-center gap-1.5 bg-emerald-500/20 group-hover:bg-emerald-500 text-emerald-200 group-hover:text-white px-3.5 py-2 rounded-xl text-xs font-bold transition">
+            <span>Lihat Keranjang</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition" />
+          </div>
+        </Link>
+      </div>
+    </aside>
   );
 }

@@ -20,11 +20,15 @@ import AdminLayout from "@/components/admin/AdminLayout";
 import { DataService } from "@/lib/data-service";
 import { Kantin, MenuItem } from "@/types";
 import { formatRupiah } from "@/lib/utils";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function AdminMenuPage() {
+  const { isPengelolaKantin, managedKantinId, managedKantinNama } = useAuth();
   const [menuList, setMenuList] = useState<MenuItem[]>([]);
   const [kantinList, setKantinList] = useState<Kantin[]>([]);
-  const [selectedKantinId, setSelectedKantinId] = useState<string>("semua");
+  const [selectedKantinId, setSelectedKantinId] = useState<string>(
+    isPengelolaKantin && managedKantinId ? managedKantinId : "semua"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -51,13 +55,16 @@ export default function AdminMenuPage() {
 
   const loadData = async () => {
     await DataService.initIfEmpty();
+    const kantinFilter = isPengelolaKantin ? managedKantinId || undefined : undefined;
     const [m, k] = await Promise.all([
-      DataService.getMenuList(),
+      DataService.getMenuList(kantinFilter),
       DataService.getKantinList(),
     ]);
     setMenuList(m);
     setKantinList(k);
-    if (k.length > 0 && !kantinId) {
+    if (isPengelolaKantin && managedKantinId) {
+      setKantinId(managedKantinId);
+    } else if (k.length > 0 && !kantinId) {
       setKantinId(k[0].id);
     }
     setLoading(false);
@@ -65,7 +72,7 @@ export default function AdminMenuPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [isPengelolaKantin, managedKantinId]);
 
   const openCreateModal = () => {
     setEditingMenu(null);
@@ -76,7 +83,11 @@ export default function AdminMenuPage() {
     setKategori("Makanan");
     setHargaMenu(15000);
     setStok(15);
-    setKantinId(kantinList[0]?.id || "kantin-barokah-01");
+    setKantinId(
+      isPengelolaKantin && managedKantinId
+        ? managedKantinId
+        : kantinList[0]?.id || "kantin-barokah-01"
+    );
     setIsAvailable(true);
     setGambarUrl("https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80");
     setCloudinaryPublicId("");
@@ -201,6 +212,11 @@ export default function AdminMenuPage() {
       await DataService.deleteMenu(id, publicId);
       loadData();
     }
+  };
+
+  const handleToggleAvailability = async (id: string, current: boolean) => {
+    await DataService.toggleMenuAvailability(id, !current);
+    loadData();
   };
 
   const filtered = menuList.filter((m) => {
@@ -338,15 +354,22 @@ export default function AdminMenuPage() {
                         </td>
                         <td className="py-3 px-4 text-gray-600 font-medium">{kantinName}</td>
                         <td className="py-3 px-4">
-                          <span
-                            className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          <button
+                            onClick={() => handleToggleAvailability(menu.id, menu.isAvailable)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-extrabold transition shadow-xs ${
                               menu.isAvailable
-                                ? "bg-emerald-100 text-brand-800"
-                                : "bg-gray-100 text-gray-500"
+                                ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                                : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
                             }`}
+                            title="Klik untuk ubah ketersediaan menu"
                           >
-                            {menu.isAvailable ? "Aktif" : "Nonaktif"}
-                          </span>
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                menu.isAvailable ? "bg-emerald-600" : "bg-red-500"
+                              }`}
+                            />
+                            <span>{menu.isAvailable ? "Tersedia" : "Habis"}</span>
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-right space-x-1">
                           <button
@@ -520,13 +543,18 @@ export default function AdminMenuPage() {
                   <select
                     value={kantinId}
                     onChange={(e) => setKantinId(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-brand-500 outline-none"
+                    disabled={isPengelolaKantin}
+                    className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-brand-500 outline-none disabled:opacity-75 disabled:bg-gray-100"
                   >
-                    {kantinList.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.namaKantin}
-                      </option>
-                    ))}
+                    {isPengelolaKantin ? (
+                      <option value={managedKantinId || ""}>{managedKantinNama || "Kantin Anda"}</option>
+                    ) : (
+                      kantinList.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.namaKantin}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div className="flex items-center gap-2 pt-5">

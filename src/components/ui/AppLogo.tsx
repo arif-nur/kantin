@@ -51,10 +51,10 @@ export default function AppLogo({
       {withText && (
         <div className="flex flex-col">
           <span className={`font-black tracking-tight text-base leading-tight ${textColor}`}>
-            Kantin<span className="text-brand-600">Sekolah</span>
+            Kantin<span className="text-brand-600">Kampus</span>
           </span>
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-            Smart Canteen
+            Campus Smart Canteen
           </span>
         </div>
       )}

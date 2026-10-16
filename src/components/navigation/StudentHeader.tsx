@@ -51,7 +51,7 @@ export default function StudentHeader({
           {showDropdown && (
             <div className="absolute left-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-50 animate-fade-in">
               <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                Daftar Kantin Sekolah
+                Daftar Kantin Kampus
               </div>
               {kantinList.map((kantin) => (
                 <button

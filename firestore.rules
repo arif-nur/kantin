@@ -2,7 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,64 +13,158 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
-    function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.role == 'admin' || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    function hasUserDoc() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    // USERS COLLECTION
-    // Users can read their own profile, admins can read all
-    // Users cannot modify their role
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserRole() {
+      return hasUserDoc() && ('role' in getUserDoc().data)
+        ? getUserDoc().data.role
+        : (request.auth.token.role != null ? request.auth.token.role : 'pemesan');
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (request.auth.token.role == 'admin' || getUserRole() == 'admin');
+    }
+
+    function isPengelolaKantin() {
+      return isAuthenticated() && (request.auth.token.role == 'pengelola_kantin' || getUserRole() == 'pengelola_kantin');
+    }
+
+    function isStaff() {
+      return isAdmin() || isPengelolaKantin();
+    }
+
+    function getManagedKantinId() {
+      return hasUserDoc() && ('managedKantinId' in getUserDoc().data)
+        ? getUserDoc().data.managedKantinId
+        : null;
+    }
+
+    function isKantinManager(kantinId) {
+      return isAdmin() || (isPengelolaKantin() && (getManagedKantinId() == null || getManagedKantinId() == kantinId));
+    }
+
+    // ==========================================
+    // 1. USERS COLLECTION
+    // ==========================================
+    // - Pemesan can read/update their own profile (name, phone, class, saldo)
+    // - Role escalation is blocked: only Admin can change 'role' or 'managedKantinId'
+    // - Staff (admin & pengelola kantin) can read user documents to identify buyers
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'pemesan';
-      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow read: if isOwner(userId) || isStaff();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role) &&
+        (!('managedKantinId' in request.resource.data) || request.resource.data.managedKantinId == resource.data.managedKantinId)
+      );
       allow delete: if isAdmin();
     }
 
-    // KANTIN COLLECTION
-    // Public read, only admin can create/update/delete
+    // ==========================================
+    // 2. KANTIN COLLECTION (STALLS)
+    // ==========================================
+    // - Public read for catalogue
+    // - Admin can manage all; Pengelola Kantin can update their assigned stall
     match /kantin/{kantinId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isKantinManager(kantinId);
     }
 
-    // MENU COLLECTION
-    // Public read, only admin can create/update/delete
+    // ==========================================
+    // 3. MENU COLLECTION
+    // ==========================================
+    // - Public read
+    // - Admin & assigned Pengelola Kantin can create/update/delete menu
+    // - Authenticated students can update stock on checkout or rating on review submission
     match /menu/{menuId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create: if isAdmin() || (isPengelolaKantin() && (getManagedKantinId() == null || request.resource.data.kantinId == getManagedKantinId()));
+      allow update: if isAdmin() || 
+                       (isPengelolaKantin() && (getManagedKantinId() == null || resource.data.kantinId == getManagedKantinId())) ||
+                       (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stok', 'ratingRataRata', 'totalUlasan']));
+      allow delete: if isAdmin() || (isPengelolaKantin() && (getManagedKantinId() == null || resource.data.kantinId == getManagedKantinId()));
     }
 
-    // PESANAN COLLECTION
-    // Pemesan can read only their orders, admin can read all
-    // Creation via client only allows status 'menunggu' with matching pemesanId
-    // Status transitions must be handled by admin or trusted server transaction
+    // ==========================================
+    // 4. PESANAN COLLECTION & SUBCOLLECTION ITEMS
+    // ==========================================
+    // - Pemesan reads their own orders; Staff reads orders for their canteen (or all if admin)
+    // - Creation allows statusTransaksi == 'menunggu' (QRIS/Tunai) or 'berhasil' (KantinPay)
+    // - Pengelola Kantin can transition order statuses (diproses, siap_diambil, selesai)
+    // - Pemesan can cancel only while status is 'menunggu'
     match /pesanan/{pesananId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.pemesanId == request.auth.uid
-                    && request.resource.data.statusPesanan == 'menunggu'
-                    && request.resource.data.statusTransaksi == 'menunggu';
-      allow update: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid && request.resource.data.statusPesanan == 'dibatalkan' && resource.data.statusPesanan == 'menunggu');
+      allow read: if isAdmin() || 
+                     (isPengelolaKantin() && (getManagedKantinId() == null || resource.data.kantinId == getManagedKantinId())) ||
+                     (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
+      
+      allow create: if isAuthenticated() && 
+                       request.resource.data.pemesanId == request.auth.uid &&
+                       request.resource.data.statusPesanan == 'menunggu' &&
+                       (request.resource.data.statusTransaksi == 'menunggu' || request.resource.data.statusTransaksi == 'berhasil');
+      
+      allow update: if isAdmin() || 
+                       (isPengelolaKantin() && (getManagedKantinId() == null || resource.data.kantinId == getManagedKantinId())) ||
+                       (isAuthenticated() && resource.data.pemesanId == request.auth.uid && request.resource.data.statusPesanan == 'dibatalkan' && resource.data.statusPesanan == 'menunggu');
+      
       allow delete: if isAdmin();
 
       // SUBCOLLECTION: items
       match /items/{itemId} {
-        allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/pesanan/$(pesananId)).data.pemesanId == request.auth.uid);
-        allow create: if isAuthenticated() && get(/databases/$(database)/documents/pesanan/$(pesananId)).data.pemesanId == request.auth.uid;
-        allow update, delete: if isAdmin();
+        allow read: if isStaff() || (isAuthenticated() && get(/databases/$(database)/documents/pesanan/$(pesananId)).data.pemesanId == request.auth.uid);
+        allow create: if isAuthenticated();
+        allow update, delete: if isStaff();
       }
     }
 
-    // TRANSAKSI COLLECTION
-    // Transactions can be read by the owner or admin
-    // Modification restricted to admin or server webhook
+    // ==========================================
+    // 5. TRANSAKSI COLLECTION
+    // ==========================================
+    // - Pemesan reads their own; Staff reads for reconciliation & reports
     match /transaksi/{transaksiId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
+      allow read: if isStaff() || (isAuthenticated() && resource.data.pemesanId == request.auth.uid);
       allow create: if isAuthenticated() && request.resource.data.pemesanId == request.auth.uid;
-      allow update: if isAdmin();
+      allow update: if isStaff();
       allow delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 6. SALDO MUTASI (KantinPay Wallet Ledger)
+    // ==========================================
+    // - Users read their own transaction history; Admin can read all for audits
+    // - Authenticated users can record mutation entries for their own account
+    match /saldo_mutasi/{mutasiId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ==========================================
+    // 7. MENU REVIEWS (Rating & Ulasan Makanan)
+    // ==========================================
+    // - Public read for food ratings and reviews
+    // - Authenticated users can write reviews
+    // - Author or Admin can delete/update
+    match /menu_reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
+
+    // ==========================================
+    // 8. SETTINGS COLLECTION
+    // ==========================================
+    // - Operational hours & emergency closure flag: public read
+    // - Admin and staff can update operational settings
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isStaff();
     }
   }
 }

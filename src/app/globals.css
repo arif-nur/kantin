@@ -59,3 +59,21 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Thermal receipt print layout */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #thermal-receipt-area, #thermal-receipt-area * {
+    visibility: visible;
+  }
+  #thermal-receipt-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}

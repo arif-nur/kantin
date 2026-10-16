@@ -21,8 +21,12 @@ import {
   OrderItem,
   Transaction,
   UserProfile,
+  UserRole,
   MenuReview,
   KantinSettings,
+  SaldoMutation,
+  PaymentMethod,
+  JadwalPengambilan,
 } from "@/types";
 
 export const DataService = {
@@ -52,7 +56,7 @@ export const DataService = {
     }
   },
 
-  async updateUserRole(uid: string, role: "admin" | "pemesan") {
+  async updateUserRole(uid: string, role: UserRole) {
     try {
       await updateDoc(doc(db, "users", uid), {
         role,
@@ -188,6 +192,13 @@ export const DataService = {
     await deleteDoc(doc(db, "menu", id));
   },
 
+  async toggleMenuAvailability(id: string, isAvailable: boolean) {
+    await updateDoc(doc(db, "menu", id), {
+      isAvailable,
+      updatedAt: serverTimestamp(),
+    });
+  },
+
   // ================= PESANAN & TRANSAKSI =================
   async getOrders(filter?: {
     pemesanId?: string;
@@ -312,9 +323,14 @@ export const DataService = {
     namaPemesan: string;
     kantinId: string;
     namaKantin: string;
-    metodeTransaksi: "QRIS" | "tunai";
+    metodeTransaksi: PaymentMethod;
     catatan?: string;
-    items: { menu: MenuItem; quantity: number }[];
+    buktiBayarUrl?: string;
+    jadwalPengambilan?: JadwalPengambilan;
+    labelPengambilan?: string;
+    kodeVoucher?: string;
+    diskonVoucher?: number;
+    items: { menu: MenuItem; quantity: number; catatanItem?: string }[];
   }): Promise<{ success: boolean; orderId?: string; kodePesanan?: string; error?: string }> {
     try {
       const res = await fetch("/api/checkout", {
@@ -349,6 +365,41 @@ export const DataService = {
         }
       }
 
+      // Calculate total & discount
+      let subtotal = 0;
+      const orderItems: OrderItem[] = params.items.map((it) => {
+        const itemSubtotal = it.menu.hargaMenu * it.quantity;
+        subtotal += itemSubtotal;
+        return {
+          menuId: it.menu.id,
+          namaMenuSnapshot: it.menu.namaMenu,
+          hargaMenuSnapshot: it.menu.hargaMenu,
+          jumlahPesanan: it.quantity,
+          subtotalItem: itemSubtotal,
+          gambarUrlSnapshot: it.menu.gambarUrl,
+          catatanItem: it.catatanItem || "",
+        };
+      });
+
+      const discount = Math.max(0, Number(params.diskonVoucher) || 0);
+      const finalTotal = Math.max(0, subtotal - discount);
+
+      // Handle KantinPay deduction if used
+      const isKantinPay = params.metodeTransaksi === "KantinPay";
+      if (isKantinPay) {
+        const deductResult = await DataService.deductSaldo(
+          params.pemesanId,
+          finalTotal,
+          `Pembayaran Pesanan Kantin`
+        );
+        if (!deductResult.success) {
+          return {
+            success: false,
+            error: deductResult.error || "Saldo KantinPay tidak mencukupi untuk pembayaran ini.",
+          };
+        }
+      }
+
       // Deduct stock in Firestore
       for (const item of params.items) {
         const menuRef = doc(db, "menu", item.menu.id);
@@ -362,23 +413,20 @@ export const DataService = {
 
       // Create order
       const ordersSnap = await getDocs(collection(db, "pesanan"));
-      const kodePesanan = `B${String(ordersSnap.size + 1).padStart(3, "0")}`;
+      const nextNum = ordersSnap.size + 1;
+      const kodePesanan = `B${String(nextNum).padStart(3, "0")}`;
+      const queueNum = ((nextNum - 1) % 99) + 1;
+      const nomorAntrean = `A-${String(queueNum).padStart(2, "0")}`;
+      const totalQty = params.items.reduce((s, i) => s + (i.quantity || 1), 0);
+      const estimasiMenit = Math.min(30, 10 + totalQty * 2);
       const orderRef = doc(collection(db, "pesanan"));
 
-      const orderItems: OrderItem[] = params.items.map((it) => ({
-        menuId: it.menu.id,
-        namaMenuSnapshot: it.menu.namaMenu,
-        hargaMenuSnapshot: it.menu.hargaMenu,
-        jumlahPesanan: it.quantity,
-        subtotalItem: it.menu.hargaMenu * it.quantity,
-        gambarUrlSnapshot: it.menu.gambarUrl,
-      }));
-
-      const subtotal = orderItems.reduce((s, i) => s + i.subtotalItem, 0);
+      const initialTrxStatus = isKantinPay ? "berhasil" : "menunggu";
 
       const newOrder: Order = {
         id: orderRef.id,
         kodePesanan,
+        nomorAntrean,
         pemesanId: params.pemesanId,
         namaPemesanSnapshot: params.namaPemesan,
         kantinId: params.kantinId,
@@ -386,10 +434,16 @@ export const DataService = {
         tanggalPemesanan: new Date().toISOString(),
         statusPesanan: "menunggu",
         metodeTransaksi: params.metodeTransaksi,
-        statusTransaksi: "menunggu",
+        statusTransaksi: initialTrxStatus,
         subtotal,
-        totalHarga: subtotal,
+        diskonVoucher: discount,
+        kodeVoucher: params.kodeVoucher || "",
+        totalHarga: finalTotal,
         catatan: params.catatan || "",
+        buktiBayarUrl: params.buktiBayarUrl || "",
+        estimasiMenit,
+        jadwalPengambilan: params.jadwalPengambilan || "langsung",
+        labelPengambilan: params.labelPengambilan || "Langsung / Sekarang (~15 Menit)",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -416,11 +470,14 @@ export const DataService = {
         pesananId: orderRef.id,
         pemesanId: params.pemesanId,
         metodeTransaksi: params.metodeTransaksi,
-        statusTransaksi: "menunggu",
-        jumlahPembayaran: subtotal,
-        referensiPembayaran:
-          params.metodeTransaksi === "QRIS" ? `QRIS-${Date.now()}` : `CASH-${kodePesanan}`,
-        waktuPembayaran: null,
+        statusTransaksi: initialTrxStatus,
+        jumlahPembayaran: finalTotal,
+        referensiPembayaran: isKantinPay
+          ? `KP-${Date.now()}`
+          : params.metodeTransaksi === "QRIS"
+          ? `QRIS-${Date.now()}`
+          : `CASH-${kodePesanan}`,
+        waktuPembayaran: isKantinPay ? new Date().toISOString() : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -464,11 +521,14 @@ export const DataService = {
     );
   },
 
-  subscribeOrders(callback: (orders: Order[]) => void) {
+  subscribeOrders(callback: (orders: Order[]) => void, kantinId?: string) {
     return onSnapshot(
       collection(db, "pesanan"),
       (snap) => {
-        const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+        let list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as Order));
+        if (kantinId && kantinId !== "semua") {
+          list = list.filter((o) => o.kantinId === kantinId);
+        }
         list.sort(
           (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
         );
@@ -480,17 +540,140 @@ export const DataService = {
     );
   },
 
-  subscribePendingOrdersCount(callback: (count: number) => void) {
-    const q = query(collection(db, "pesanan"), where("statusPesanan", "==", "menunggu"));
+  subscribePendingOrdersCount(callback: (count: number) => void, kantinId?: string) {
     return onSnapshot(
-      q,
+      collection(db, "pesanan"),
       (snap) => {
-        callback(snap.size);
+        let count = 0;
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.statusPesanan === "menunggu") {
+            if (!kantinId || kantinId === "semua" || data.kantinId === kantinId) {
+              count++;
+            }
+          }
+        });
+        callback(count);
       },
       (err) => {
         console.error("subscribePendingOrdersCount error:", err);
       }
     );
+  },
+
+
+
+  // ================= KANTINPAY & SALDO SISWA =================
+  async getSaldo(userId: string): Promise<number> {
+    try {
+      const snap = await getDoc(doc(db, "users", userId));
+      if (snap.exists()) {
+        return snap.data().saldoKantin || 0;
+      }
+      return 0;
+    } catch (e) {
+      console.error("Gagal mengambil saldo:", e);
+      return 0;
+    }
+  },
+
+  async topupSaldo(
+    userId: string,
+    amount: number,
+    keterangan: string = "Top Up Saldo KantinPay"
+  ): Promise<{ success: boolean; newSaldo: number }> {
+    try {
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
+      const currentSaldo = userSnap.exists() ? userSnap.data().saldoKantin || 0 : 0;
+      const newSaldo = currentSaldo + amount;
+
+      await updateDoc(userRef, {
+        saldoKantin: newSaldo,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Catat mutasi saldo
+      const mutasiRef = doc(collection(db, "saldo_mutasi"));
+      await setDoc(mutasiRef, {
+        id: mutasiRef.id,
+        userId,
+        tipe: "topup",
+        jumlah: amount,
+        saldoSebelum: currentSaldo,
+        saldoSesudah: newSaldo,
+        keterangan,
+        createdAt: serverTimestamp(),
+      });
+
+      return { success: true, newSaldo };
+    } catch (e) {
+      console.error("Gagal top up saldo:", e);
+      return { success: false, newSaldo: 0 };
+    }
+  },
+
+  async deductSaldo(
+    userId: string,
+    amount: number,
+    keterangan: string = "Pembayaran Pesanan"
+  ): Promise<{ success: boolean; newSaldo: number; error?: string }> {
+    try {
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
+      const currentSaldo = userSnap.exists() ? userSnap.data().saldoKantin || 0 : 0;
+
+      if (currentSaldo < amount) {
+        return {
+          success: false,
+          newSaldo: currentSaldo,
+          error: "Saldo KantinPay tidak mencukupi.",
+        };
+      }
+
+      const newSaldo = currentSaldo - amount;
+
+      await updateDoc(userRef, {
+        saldoKantin: newSaldo,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Catat mutasi saldo
+      const mutasiRef = doc(collection(db, "saldo_mutasi"));
+      await setDoc(mutasiRef, {
+        id: mutasiRef.id,
+        userId,
+        tipe: "pembayaran",
+        jumlah: amount,
+        saldoSebelum: currentSaldo,
+        saldoSesudah: newSaldo,
+        keterangan,
+        createdAt: serverTimestamp(),
+      });
+
+      return { success: true, newSaldo };
+    } catch (e) {
+      console.error("Gagal memotong saldo:", e);
+      return { success: false, newSaldo: 0, error: "Gagal memproses saldo." };
+    }
+  },
+
+  async getSaldoMutations(userId: string): Promise<SaldoMutation[]> {
+    try {
+      const q = query(
+        collection(db, "saldo_mutasi"),
+        where("userId", "==", userId)
+      );
+      const snap = await getDocs(q);
+      const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as SaldoMutation));
+      return list.sort(
+        (a, b) => new Date(b.createdAt?.toDate ? b.createdAt.toDate() : b.createdAt || 0).getTime() -
+                  new Date(a.createdAt?.toDate ? a.createdAt.toDate() : a.createdAt || 0).getTime()
+      );
+    } catch (e) {
+      console.error("Gagal mengambil mutasi saldo:", e);
+      return [];
+    }
   },
 
   // ================= REVIEWS & RATINGS =================
@@ -500,10 +683,22 @@ export const DataService = {
       const snap = await getDocs(q);
       const list = snap.docs.map((d) => ({ ...d.data(), id: d.id } as MenuReview));
       return list.sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        (a, b) => new Date(b.createdAt?.toDate ? b.createdAt.toDate() : b.createdAt || 0).getTime() -
+                  new Date(a.createdAt?.toDate ? a.createdAt.toDate() : a.createdAt || 0).getTime()
       );
     } catch (e) {
       console.error("Gagal mengambil ulasan menu:", e);
+      return [];
+    }
+  },
+
+  async getReviewsByPesananId(pesananId: string): Promise<MenuReview[]> {
+    try {
+      const q = query(collection(db, "menu_reviews"), where("pesananId", "==", pesananId));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id } as MenuReview));
+    } catch (e) {
+      console.error("Gagal mengecek review pesanan:", e);
       return [];
     }
   },
@@ -519,6 +714,28 @@ export const DataService = {
       ...newRev,
       createdAt: serverTimestamp(),
     });
+
+    // Update menu average rating
+    try {
+      const q = query(collection(db, "menu_reviews"), where("menuId", "==", data.menuId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const totalUlasan = snap.size;
+        let sumRating = 0;
+        snap.forEach((d) => {
+          sumRating += d.data().rating || 5;
+        });
+        const ratingRataRata = Number((sumRating / totalUlasan).toFixed(1));
+        await updateDoc(doc(db, "menu", data.menuId), {
+          ratingRataRata,
+          totalUlasan,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } catch (err) {
+      console.error("Gagal update average rating menu:", err);
+    }
+
     return newRev;
   },
 

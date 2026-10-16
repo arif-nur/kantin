@@ -95,7 +95,7 @@ function RegisterForm() {
             Daftar Akun Mahasiswa
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Buat akun untuk memesan makanan kantin sekolah dengan praktis
+            Buat akun untuk memesan makanan kantin kampus dengan praktis
           </p>
         </div>
 

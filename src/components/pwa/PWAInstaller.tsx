@@ -76,12 +76,12 @@ export default function PWAInstaller() {
 
       {/* PWA Install Banner */}
       {showInstallBanner && (
-        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-50 max-w-sm bg-white rounded-2xl shadow-floating border border-emerald-100 p-4 animate-fade-in flex items-center gap-3">
+        <div className="fixed bottom-24 left-4 right-4 sm:left-6 sm:right-auto sm:bottom-6 z-50 max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 p-3.5 animate-fade-in flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-brand-500 text-white flex items-center justify-center flex-shrink-0 shadow-md">
             <Download className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-bold text-gray-900">Install Kantin Sekolah</h4>
+            <h4 className="text-sm font-bold text-gray-900">Install Kantin Kampus</h4>
             <p className="text-xs text-gray-500 truncate">Pesan makanan lebih cepat dari layar utama!</p>
           </div>
           <div className="flex items-center gap-2">

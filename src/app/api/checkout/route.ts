@@ -12,6 +12,11 @@ export async function POST(req: NextRequest) {
       namaKantin,
       metodeTransaksi,
       catatan,
+      buktiBayarUrl,
+      jadwalPengambilan,
+      labelPengambilan,
+      kodeVoucher,
+      diskonVoucher,
       items,
     } = body;
 
@@ -26,7 +31,10 @@ export async function POST(req: NextRequest) {
     try {
       const result = await adminDb.runTransaction(async (transaction) => {
         // 1. ALL READS FIRST
-        const menuSnapshots: { snap: admin.firestore.DocumentSnapshot; reqQty: number; menuId: string }[] = [];
+        const userRef = adminDb.collection("users").doc(pemesanId);
+        const userDoc = await transaction.get(userRef);
+
+        const menuSnapshots: { snap: admin.firestore.DocumentSnapshot; reqQty: number; menuId: string; itemRef: any }[] = [];
         
         for (const item of items) {
           const menuRef = adminDb.collection("menu").doc(item.menu.id);
@@ -35,6 +43,7 @@ export async function POST(req: NextRequest) {
             snap: menuDoc,
             reqQty: item.quantity,
             menuId: item.menu.id,
+            itemRef: item,
           });
         }
 
@@ -42,7 +51,7 @@ export async function POST(req: NextRequest) {
         let calculatedSubtotal = 0;
         const validOrderItems: any[] = [];
 
-        for (const { snap, reqQty, menuId } of menuSnapshots) {
+        for (const { snap, reqQty, menuId, itemRef } of menuSnapshots) {
           if (!snap.exists) {
             throw new Error(`Menu ID ${menuId} tidak ditemukan.`);
           }
@@ -66,7 +75,23 @@ export async function POST(req: NextRequest) {
             jumlahPesanan: reqQty,
             subtotalItem: price * reqQty,
             gambarUrlSnapshot: menuData.gambarUrl || "",
+            catatanItem: itemRef.catatanItem || "",
           });
+        }
+
+        const discount = Math.max(0, Number(diskonVoucher) || 0);
+        const finalTotal = Math.max(0, calculatedSubtotal - discount);
+
+        // Validate KantinPay balance if selected
+        const isKantinPay = metodeTransaksi === "KantinPay";
+        let currentSaldo = 0;
+        if (isKantinPay) {
+          currentSaldo = userDoc.exists ? (userDoc.data()?.saldoKantin || 0) : 0;
+          if (currentSaldo < finalTotal) {
+            throw new Error(
+              `Saldo KantinPay tidak mencukupi (Saldo: Rp ${currentSaldo.toLocaleString("id-ID")}, Total: Rp ${finalTotal.toLocaleString("id-ID")}). Silakan top up atau pilih metode lain.`
+            );
+          }
         }
 
         // 2. ALL WRITES AFTER READS
@@ -79,15 +104,44 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // Generate codes
+        // Generate codes & daily queue number
         const orderCountSnap = await adminDb.collection("pesanan").count().get();
         const nextOrderNum = (orderCountSnap.data().count || 0) + 1;
         const kodePesanan = `B${String(nextOrderNum).padStart(3, "0")}`;
+        const queueNum = ((nextOrderNum - 1) % 99) + 1;
+        const nomorAntrean = `A-${String(queueNum).padStart(2, "0")}`;
+        const totalQty = items.reduce((s: number, i: any) => s + (i.quantity || 1), 0);
+        const estimasiMenit = Math.min(30, 10 + totalQty * 2);
+
+        // Deduct KantinPay if used
+        if (isKantinPay) {
+          const newSaldo = currentSaldo - finalTotal;
+          transaction.update(userRef, {
+            saldoKantin: newSaldo,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          const mutasiRef = adminDb.collection("saldo_mutasi").doc();
+          transaction.set(mutasiRef, {
+            id: mutasiRef.id,
+            userId: pemesanId,
+            tipe: "pembayaran",
+            jumlah: finalTotal,
+            saldoSebelum: currentSaldo,
+            saldoSesudah: newSaldo,
+            keterangan: `Pembayaran Pesanan #${kodePesanan}`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        const initialTrxStatus = isKantinPay ? "berhasil" : "menunggu";
+        const initialPaymentTime = isKantinPay ? admin.firestore.FieldValue.serverTimestamp() : null;
 
         const orderRef = adminDb.collection("pesanan").doc();
         const orderData = {
           id: orderRef.id,
           kodePesanan,
+          nomorAntrean,
           pemesanId,
           namaPemesanSnapshot: namaPemesan,
           kantinId,
@@ -95,10 +149,16 @@ export async function POST(req: NextRequest) {
           tanggalPemesanan: admin.firestore.FieldValue.serverTimestamp(),
           statusPesanan: "menunggu",
           metodeTransaksi,
-          statusTransaksi: "menunggu",
+          statusTransaksi: initialTrxStatus,
           subtotal: calculatedSubtotal,
-          totalHarga: calculatedSubtotal,
+          diskonVoucher: discount,
+          kodeVoucher: kodeVoucher || "",
+          totalHarga: finalTotal,
           catatan: catatan || "",
+          buktiBayarUrl: buktiBayarUrl || "",
+          estimasiMenit,
+          jadwalPengambilan: jadwalPengambilan || "langsung",
+          labelPengambilan: labelPengambilan || "Langsung / Sekarang (~15 Menit)",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
@@ -117,13 +177,14 @@ export async function POST(req: NextRequest) {
           pesananId: orderRef.id,
           pemesanId,
           metodeTransaksi,
-          statusTransaksi: "menunggu",
-          jumlahPembayaran: calculatedSubtotal,
-          referensiPembayaran:
-            metodeTransaksi === "QRIS"
-              ? `QRIS-${Date.now()}`
-              : `CASH-${kodePesanan}`,
-          waktuPembayaran: null,
+          statusTransaksi: initialTrxStatus,
+          jumlahPembayaran: finalTotal,
+          referensiPembayaran: isKantinPay
+            ? `KP-${Date.now()}`
+            : metodeTransaksi === "QRIS"
+            ? `QRIS-${Date.now()}`
+            : `CASH-${kodePesanan}`,
+          waktuPembayaran: initialPaymentTime,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });

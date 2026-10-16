@@ -202,7 +202,7 @@ export default function AdminPengaturanPage() {
             <button
               type="submit"
               disabled={savingSettings}
-              className="px-4 py-2 bg-[#082215] text-emerald-400 font-extrabold text-xs rounded-xl hover:bg-[#05170e] transition flex items-center gap-1.5 disabled:opacity-50"
+              className="px-4 py-2 bg-[#16a34a] text-white font-bold text-xs rounded-xl hover:bg-emerald-700 transition flex items-center gap-1.5 disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{savingSettings ? "Menyimpan..." : "Simpan Pengaturan Operasional"}</span>

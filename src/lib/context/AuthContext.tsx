@@ -19,6 +19,10 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
+  isPengelolaKantin: boolean;
+  managedKantinId: string | null;
+  managedKantinNama: string | null;
   isPemesan: boolean;
   login: (email: string, password: string) => Promise<UserProfile>;
   register: (data: {
@@ -204,7 +208,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         user,
         userProfile,
         loading,
-        isAdmin: userProfile?.role === "admin",
+        isAdmin: userProfile?.role === "admin" || userProfile?.role === "pengelola_kantin",
+        isSuperAdmin: userProfile?.role === "admin",
+        isPengelolaKantin: userProfile?.role === "pengelola_kantin",
+        managedKantinId: userProfile?.kantinId || null,
+        managedKantinNama: userProfile?.namaKantinKelola || null,
         isPemesan: userProfile?.role === "pemesan",
         login,
         register,

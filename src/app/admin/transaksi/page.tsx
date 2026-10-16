@@ -130,7 +130,7 @@ export default function AdminTransaksiPage() {
                 onClick={() => setStatusFilter(status)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase transition ${
                   statusFilter === status
-                    ? "bg-[#082215] text-emerald-300"
+                    ? "bg-[#16a34a] text-white"
                     : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                 }`}
               >

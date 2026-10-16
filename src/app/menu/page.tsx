@@ -1,24 +1,23 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   Search,
   Plus,
+  Minus,
   Utensils,
   Coffee,
   Pizza,
   LayoutGrid,
-  AlertCircle,
-  Star,
   Clock,
-  ShieldCheck,
   Store,
-  Tag,
+  ChevronDown,
+  X,
   CheckCircle2,
-  TrendingUp,
-  QrCode,
+  Sparkles,
+  Star,
 } from "lucide-react";
 import StudentHeader from "@/components/navigation/StudentHeader";
 import FloatingBasket from "@/components/navigation/FloatingBasket";
@@ -37,10 +36,9 @@ export default function MenuPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Semua");
-  const [priceFilter, setPriceFilter] = useState<"semua" | "dibawah15rb" | "tersedia">("semua");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const { addItem, items } = useCart();
+  const { addItem, updateQuantity, items } = useCart();
 
   useEffect(() => {
     async function loadData() {
@@ -82,19 +80,15 @@ export default function MenuPage() {
     if (!res.success && res.message) {
       setToastMessage(res.message);
       setTimeout(() => setToastMessage(null), 3500);
-    } else {
-      setToastMessage(`${menu.namaMenu} ditambahkan ke keranjang`);
-      setTimeout(() => setToastMessage(null), 2500);
     }
   };
 
-  // Popular menus for spotlight
-  const popularMenus = React.useMemo(() => {
-    return menuList.slice(0, 5);
-  }, [menuList]);
+  const currentKantin = useMemo(() => {
+    return kantinList.find((k) => k.id === selectedKantinId) || kantinList[0];
+  }, [kantinList, selectedKantinId]);
 
-  // Dynamically compute categories with counts from actual menu database
-  const categories = React.useMemo(() => {
+  // Dynamically compute categories
+  const categories = useMemo(() => {
     const catCounts: Record<string, number> = {};
     menuList.forEach((m) => {
       const cat = m.kategori ? m.kategori.trim() : "Lainnya";
@@ -106,252 +100,125 @@ export default function MenuPage() {
       const lower = cat.toLowerCase();
       let icon = LayoutGrid;
       if (lower.includes("makan")) icon = Utensils;
-      else if (
-        lower.includes("minum") ||
-        lower.includes("es") ||
-        lower.includes("teh") ||
-        lower.includes("jus")
-      )
-        icon = Coffee;
+      else if (lower.includes("minum") || lower.includes("es") || lower.includes("teh") || lower.includes("jus")) icon = Coffee;
       else if (lower.includes("kopi")) icon = Coffee;
-      else if (
-        lower.includes("snack") ||
-        lower.includes("cemil") ||
-        lower.includes("roti") ||
-        lower.includes("kue") ||
-        lower.includes("kentang") ||
-        lower.includes("dimsum")
-      )
-        icon = Pizza;
-      else icon = Star;
+      else if (lower.includes("snack") || lower.includes("cemil") || lower.includes("roti") || lower.includes("kue")) icon = Pizza;
       result.push({ name: cat, icon, count: catCounts[cat] });
     });
     return result;
   }, [menuList]);
 
-  const filteredMenu = menuList.filter((item) => {
-    const matchesSearch =
-      item.namaMenu.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.deskripsi.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "Semua" || item.kategori.toLowerCase() === selectedCategory.toLowerCase();
-    const matchesPrice =
-      priceFilter === "dibawah15rb" ? item.hargaMenu <= 15000 : true;
-    const matchesStock =
-      priceFilter === "tersedia" ? item.isAvailable && item.stok > 0 : true;
+  // Filter menu list
+  const filteredMenu = useMemo(() => {
+    return menuList.filter((item) => {
+      const matchesSearch =
+        item.namaMenu.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.deskripsi.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory =
+        selectedCategory === "Semua" || item.kategori.toLowerCase() === selectedCategory.toLowerCase();
 
-    return matchesSearch && matchesCategory && matchesPrice && matchesStock;
-  });
+      return matchesSearch && matchesCategory;
+    });
+  }, [menuList, searchQuery, selectedCategory]);
 
   return (
-    <div className="min-h-screen bg-[#f8faf8] pb-28">
-      {/* Toast Notification */}
+    <div className="min-h-screen bg-[#f8faf8] pb-32">
+      {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#1b432a] text-white text-xs sm:text-sm font-bold px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-fade-in border border-emerald-800">
-          <CheckCircle2 className="w-4 h-4 text-emerald-300 flex-shrink-0" />
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-xs sm:text-sm font-semibold px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 animate-fade-in border border-gray-800">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Header */}
+      {/* Global Student Header */}
       <StudentHeader
         kantinList={kantinList}
         selectedKantinId={selectedKantinId}
         onSelectKantin={handleSelectKantin}
       />
 
-      <main className="max-w-5xl mx-auto px-4 pt-4 sm:pt-6">
-        {/* Operational Status Banner if Closed */}
-        {!loading && !operationalStatus.isOpen && (
-          <div className="mb-5 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3 shadow-xs animate-fade-in">
-            <Clock className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-amber-950">
-                Kantin Sedang Tutup ({settings?.jamBuka || "07:00"} - {settings?.jamTutup || "15:00"})
-              </h4>
-              <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 leading-relaxed">
-                {settings?.pesanTutup || operationalStatus.reason || "Kantin saat ini sedang tidak menerima pesanan baru."}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Canteen Info Card (Clean Solid Flat Card - No Gradient, No Emojis) */}
-        <div className="bg-[#1b432a] text-white rounded-3xl p-5 sm:p-6 mb-6 shadow-sm">
+      <main className="max-w-4xl mx-auto px-4 pt-4 sm:pt-6 space-y-4">
+        {/* Merchant Profile Banner (GoFood / GrabFood Merchant Style) */}
+        <section aria-label="Informasi Merchant Kantin" className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-100 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center flex-shrink-0 text-white">
-                <Store className="w-6 h-6 text-white" />
+            <div className="flex items-start gap-3.5">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-emerald-50 text-[#16a34a] border border-emerald-100 flex items-center justify-center flex-shrink-0 shadow-xs">
+                <Store className="w-7 h-7 sm:w-8 sm:h-8" />
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                    {kantinList.find((k) => k.id === selectedKantinId)?.namaKantin || "Wana Caffe"}
-                  </h2>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    Buka
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-lg sm:text-xl font-extrabold text-gray-900 tracking-tight">
+                    {currentKantin?.namaKantin || "Kantin Kampus"}
+                  </h1>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                      operationalStatus.isOpen
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : "bg-red-50 text-red-700 border border-red-200"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        operationalStatus.isOpen ? "bg-emerald-600 animate-pulse" : "bg-red-500"
+                      }`}
+                    />
+                    {operationalStatus.isOpen ? "Buka Sekarang" : "Tutup"}
                   </span>
                 </div>
-                <p className="text-xs text-emerald-100/70 mt-0.5 font-medium">
-                  Layanan pemesanan makanan dan minuman online sekolah
+                <p className="text-xs text-gray-500 mt-1">
+                  {currentKantin?.alamatKantin || "Area Kantin Utama Kampus"}
+                </p>
+                <div className="flex items-center gap-3 text-[11px] text-gray-400 font-medium mt-2">
+                  <span className="flex items-center gap-1 text-gray-600 font-semibold">
+                    <Clock className="w-3.5 h-3.5 text-gray-400" />
+                    {settings?.jamBuka || "07:00"} - {settings?.jamTutup || "15:00"}
+                  </span>
+                  <span>•</span>
+                  <span>Bayar KantinPay, QRIS & Tunai</span>
+                  <span>•</span>
+                  <span>Higienis</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Operational notice when closed */}
+            {!operationalStatus.isOpen && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 sm:max-w-xs">
+                <p className="font-bold">Kantin sedang tidak menerima pesanan.</p>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  {settings?.pesanTutup || operationalStatus.reason || "Buka kembali jam operasional berikutnya."}
                 </p>
               </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-white/10 text-xs text-emerald-100/90 font-medium">
-              <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-xl">
-                <Clock className="w-3.5 h-3.5 text-emerald-300" />
-                <span>{settings?.jamBuka || "07:00"} - {settings?.jamTutup || "15:00"}</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-xl">
-                <QrCode className="w-3.5 h-3.5 text-emerald-300" />
-                <span>QRIS & Tunai</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-white/10 px-3 py-1.5 rounded-xl">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                <span>Higienis & Halal</span>
-              </div>
-            </div>
+            )}
           </div>
-        </div>
+        </section>
 
         {/* Search Bar */}
-        <div className="relative mb-5">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
             <Search className="w-4 h-4" />
           </div>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari makanan, minuman, atau cemilan..."
-            className="w-full pl-11 pr-4 py-3.5 bg-white rounded-2xl border border-gray-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#1b432a] focus:border-transparent text-gray-900 placeholder:text-gray-400 transition shadow-xs"
+            placeholder={`Cari menu di ${currentKantin?.namaKantin || "kantin"}...`}
+            className="w-full pl-10 pr-9 py-3 bg-white rounded-xl border border-gray-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#16a34a] focus:border-transparent text-gray-900 placeholder:text-gray-400 transition shadow-xs"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* Quick Filter Chips (Lucide Icons, Solid Colors, No Emojis) */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-6 text-xs font-semibold">
-          <button
-            onClick={() => setPriceFilter("semua")}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition ${
-              priceFilter === "semua"
-                ? "bg-[#1b432a] text-white shadow-xs"
-                : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>Semua Menu</span>
-          </button>
-          <button
-            onClick={() => setPriceFilter("dibawah15rb")}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition ${
-              priceFilter === "dibawah15rb"
-                ? "bg-[#1b432a] text-white shadow-xs"
-                : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            <Tag className="w-3.5 h-3.5" />
-            <span>Harga Di Bawah 15rb</span>
-          </button>
-          <button
-            onClick={() => setPriceFilter("tersedia")}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition ${
-              priceFilter === "tersedia"
-                ? "bg-[#1b432a] text-white shadow-xs"
-                : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Stok Tersedia</span>
-          </button>
-        </div>
-
-        {/* Popular Menus Spotlight Carousel (Solid Cards, Lucide Icons, No Emojis) */}
-        {menuList.length > 0 && selectedCategory === "Semua" && !searchQuery && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-3.5">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-emerald-50 text-[#1b432a] flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4" />
-                </div>
-                <h3 className="text-base font-bold text-gray-900">
-                  Menu Terlaris
-                </h3>
-              </div>
-              <span className="text-xs font-semibold text-gray-500">Paling Sering Dipesan</span>
-            </div>
-
-            <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-              {popularMenus.map((menu) => {
-                const inCart = items.find((i) => i.menu.id === menu.id);
-                return (
-                  <div
-                    key={`popular-${menu.id}`}
-                    className="w-56 sm:w-64 flex-shrink-0 bg-white rounded-2xl p-3 border border-gray-200 hover:border-gray-300 transition flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="w-full h-32 rounded-xl overflow-hidden relative mb-2.5 bg-gray-100">
-                        <Image
-                          src={menu.gambarUrl}
-                          alt={menu.namaMenu}
-                          fill
-                          sizes="256px"
-                          className="object-cover"
-                        />
-                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-[#1b432a] text-white text-[10px] font-bold flex items-center gap-1 shadow-xs">
-                          <TrendingUp className="w-3 h-3 text-emerald-300" />
-                          <span>Terlaris</span>
-                        </span>
-                        <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-white text-gray-900 text-[10px] font-bold flex items-center gap-1 shadow-xs">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          <span>4.9</span>
-                        </div>
-                      </div>
-
-                      <Link href={`/menu/${menu.id}`}>
-                        <h4 className="font-bold text-xs sm:text-sm text-gray-900 hover:text-[#1b432a] transition truncate">
-                          {menu.namaMenu}
-                        </h4>
-                      </Link>
-                      <p className="text-[11px] text-gray-500 line-clamp-1 mt-0.5">
-                        {menu.deskripsi}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
-                      <span className="font-bold text-sm text-[#1b432a]">
-                        {formatRupiah(menu.hargaMenu)}
-                      </span>
-                      <button
-                        onClick={() => handleAddToCart(menu)}
-                        className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition ${
-                          inCart
-                            ? "bg-[#1b432a] text-white shadow-xs"
-                            : "bg-emerald-50 text-[#1b432a] hover:bg-[#1b432a] hover:text-white"
-                        }`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{inCart ? `${inCart.quantity} di Keranjang` : "Pesan"}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Category Pills (Lucide Icons, Solid Colors, No Emojis) */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-gray-900">Kategori Menu</h2>
-            <span className="text-xs font-semibold text-gray-500">
-              {filteredMenu.length} Pilihan Tersedia
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+        {/* Sticky Category Tabs Navigation (GoFood / GrabFood Style) */}
+        <div className="sticky top-16 z-20 bg-[#f8faf8]/95 backdrop-blur-md py-2 -mx-4 px-4 border-b border-gray-200/60">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             {categories.map((cat) => {
               const Icon = cat.icon;
               const isActive = selectedCategory === cat.name;
@@ -359,17 +226,17 @@ export default function MenuPage() {
                 <button
                   key={cat.name}
                   onClick={() => setSelectedCategory(cat.name)}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl font-bold text-xs whitespace-nowrap transition ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                     isActive
-                      ? "bg-[#1b432a] text-white shadow-xs"
-                      : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+                      ? "bg-[#16a34a] text-white shadow-xs"
+                      : "bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border border-gray-200/80"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5" />
                   <span>{cat.name}</span>
                   <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                      isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
                     }`}
                   >
                     {cat.count}
@@ -380,35 +247,41 @@ export default function MenuPage() {
           </div>
         </div>
 
-        {/* Menu Grid */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-bold text-gray-900">
-              {selectedCategory === "Semua" ? "Daftar Menu" : selectedCategory}
-            </h3>
+        {/* Menu Items Section */}
+        <section aria-label="Daftar Menu Makanan dan Minuman" className="pt-2">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm sm:text-base font-extrabold text-gray-900">
+              {selectedCategory === "Semua" ? "Semua Menu" : selectedCategory}
+            </h2>
+            <span className="text-xs text-gray-400 font-medium">
+              {filteredMenu.length} menu
+            </span>
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[1, 2, 3, 4].map((n) => (
                 <div
-                  key={i}
-                  className="bg-white rounded-2xl p-4 border border-gray-200 animate-pulse h-36"
+                  key={n}
+                  className="bg-white rounded-2xl p-4 border border-gray-100 h-28 animate-pulse"
                 />
               ))}
             </div>
           ) : filteredMenu.length === 0 ? (
-            <div className="bg-white rounded-2xl p-10 text-center border border-gray-200 my-6">
-              <div className="w-14 h-14 mx-auto rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 mb-3">
-                <Utensils className="w-6 h-6" />
+            <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 my-4">
+              <div className="w-12 h-12 mx-auto rounded-full bg-gray-50 flex items-center justify-center text-gray-400 mb-2">
+                <Utensils className="w-5 h-5" />
               </div>
-              <h4 className="text-sm font-bold text-gray-800">Menu Tidak Ditemukan</h4>
-              <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
-                Coba gunakan kata kunci pencarian lain atau pilih kategori yang berbeda.
+              <h3 className="text-sm font-bold text-gray-800">Menu Tidak Ditemukan</h3>
+              <p className="text-xs text-gray-400 mt-1">
+                {searchQuery
+                  ? `Tidak ada hasil pencarian "${searchQuery}". Coba kata kunci lain.`
+                  : "Belum ada menu di kategori ini."}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            /* Modern 2-Column Food Delivery Menu Card Grid */
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
               {filteredMenu.map((menu) => {
                 const inCart = items.find((i) => i.menu.id === menu.id);
                 const isOutOfStock = menu.stok <= 0 || !menu.isAvailable;
@@ -416,84 +289,120 @@ export default function MenuPage() {
                 return (
                   <div
                     key={menu.id}
-                    className="bg-white rounded-2xl p-3.5 border border-gray-200 hover:border-gray-300 transition-all flex gap-3.5 relative overflow-hidden group"
+                    className="bg-white rounded-2xl p-3.5 border border-gray-100 hover:border-gray-200 hover:shadow-xs transition flex gap-3 justify-between items-start group"
                   >
-                    {/* Image Thumbnail */}
-                    <Link
-                      href={`/menu/${menu.id}`}
-                      className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden relative flex-shrink-0 bg-gray-100"
-                    >
-                      <Image
-                        src={menu.gambarUrl}
-                        alt={menu.namaMenu}
-                        fill
-                        sizes="(max-width: 640px) 96px, 112px"
-                        className="object-cover"
-                      />
-                      {isOutOfStock && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-red-600 px-2 py-0.5 rounded-md flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            Habis
-                          </span>
-                        </div>
-                      )}
-                      {!isOutOfStock && menu.stok <= 5 && (
-                        <span className="absolute top-1 left-1 text-[9px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md shadow-xs flex items-center gap-1">
-                          <Clock className="w-2.5 h-2.5" />
-                          Sisa {menu.stok}
-                        </span>
-                      )}
-                    </Link>
-
-                    {/* Content Details */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-between">
+                    {/* Left: Info & Price */}
+                    <div className="flex-1 min-w-0 pr-1 flex flex-col justify-between self-stretch">
                       <div>
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                            <Tag className="w-2.5 h-2.5" />
-                            {menu.kodeMenu} • {menu.kategori}
-                          </span>
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-gray-700">
-                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                            <span>4.9</span>
-                          </div>
-                        </div>
-
-                        <Link href={`/menu/${menu.id}`}>
-                          <h4 className="font-bold text-sm sm:text-base text-gray-900 hover:text-[#1b432a] transition truncate">
+                        <Link href={`/menu/${menu.id}`} className="block">
+                          <h3 className="font-bold text-sm sm:text-[15px] text-gray-900 group-hover:text-[#16a34a] transition line-clamp-1">
                             {menu.namaMenu}
-                          </h4>
+                          </h3>
                         </Link>
-                        <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5 leading-relaxed">
+                        <p className="text-[11px] text-gray-500 line-clamp-2 mt-1 leading-relaxed">
                           {menu.deskripsi}
                         </p>
                       </div>
 
-                      {/* Price & Action */}
-                      <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-100">
-                        <span className="text-sm sm:text-base font-bold text-[#1b432a]">
-                          {formatRupiah(menu.hargaMenu)}
-                        </span>
-
-                        <button
-                          onClick={() => handleAddToCart(menu)}
-                          disabled={isOutOfStock}
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition ${
-                            isOutOfStock
-                              ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                              : inCart
-                              ? "bg-[#1b432a] text-white shadow-xs"
-                              : "bg-emerald-50 text-[#1b432a] hover:bg-[#1b432a] hover:text-white"
-                          }`}
-                          title={isOutOfStock ? "Stok habis" : "Tambah ke keranjang"}
-                        >
-                          {inCart ? (
-                            <span className="text-xs font-bold">{inCart.quantity}</span>
-                          ) : (
-                            <Plus className="w-4 h-4" />
+                      <div className="mt-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-extrabold text-sm sm:text-base text-gray-900">
+                            {formatRupiah(menu.hargaMenu)}
+                          </span>
+                          {menu.ratingRataRata ? (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200/60">
+                              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                              {menu.ratingRataRata.toFixed(1)}
+                              {menu.totalUlasan ? (
+                                <span className="text-gray-400 font-normal">({menu.totalUlasan})</span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                          {!isOutOfStock && menu.stok <= 5 && (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">
+                              Sisa {menu.stok}
+                            </span>
                           )}
-                        </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Square Photo + Add / Quantity Stepper Button */}
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <Link
+                        href={`/menu/${menu.id}`}
+                        className="w-24 h-24 sm:w-26 sm:h-26 rounded-xl overflow-hidden relative bg-gray-100 block"
+                      >
+                        <Image
+                          src={menu.gambarUrl}
+                          alt={menu.namaMenu}
+                          fill
+                          sizes="(max-width: 640px) 96px, 104px"
+                          className={`object-cover transition-transform duration-300 group-hover:scale-105 ${
+                            isOutOfStock ? "grayscale opacity-60" : ""
+                          }`}
+                        />
+                        {isOutOfStock && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <span className="text-[10px] font-black uppercase text-white bg-red-600 px-2 py-0.5 rounded-md">
+                              Habis
+                            </span>
+                          </div>
+                        )}
+                      </Link>
+
+                      {/* Add Button or Stepper (GoFood Style) */}
+                      <div className="mt-2 w-full flex justify-center">
+                        {isOutOfStock ? (
+                          <button
+                            disabled
+                            className="w-full py-1 px-3 rounded-lg text-[11px] font-bold bg-gray-100 text-gray-400 cursor-not-allowed"
+                          >
+                            Habis
+                          </button>
+                        ) : inCart ? (
+                          /* Interactive Stepper when in cart */
+                          <div className="flex items-center bg-emerald-50 rounded-xl border border-emerald-200 p-0.5 shadow-2xs">
+                            <button
+                              onClick={() => updateQuantity(menu.id, inCart.quantity - 1)}
+                              className="w-6 h-6 flex items-center justify-center text-emerald-800 hover:bg-emerald-100 rounded-lg transition active:scale-90"
+                              title="Kurangi kuantitas"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="w-6 text-center font-extrabold text-xs text-emerald-950">
+                              {inCart.quantity}
+                            </span>
+                            <button
+                              onClick={() => {
+                                if (inCart.quantity < menu.stok) {
+                                  updateQuantity(menu.id, inCart.quantity + 1);
+                                } else {
+                                  setToastMessage(`Stok maksimal hanya ${menu.stok}`);
+                                  setTimeout(() => setToastMessage(null), 2500);
+                                }
+                              }}
+                              className="w-6 h-6 flex items-center justify-center bg-[#16a34a] text-white hover:bg-emerald-700 rounded-lg transition active:scale-90"
+                              title="Tambah kuantitas"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          /* Initial Add Button */
+                          <button
+                            onClick={() => handleAddToCart(menu)}
+                            disabled={!operationalStatus.isOpen}
+                            className={`w-full py-1 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs ${
+                              !operationalStatus.isOpen
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                : "bg-white border border-[#16a34a] text-[#16a34a] hover:bg-[#16a34a] hover:text-white"
+                            }`}
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Tambah</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -501,7 +410,7 @@ export default function MenuPage() {
               })}
             </div>
           )}
-        </div>
+        </section>
       </main>
 
       {/* Floating Basket & Bottom Nav */}

@@ -13,8 +13,8 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "Kantin Sekolah - Pemesanan Makanan & Minuman Online",
-  description: "Aplikasi PWA Pemesanan Kantin Sekolah Modern, Cepat, dan Praktis untuk siswa dan admin kantin.",
+  title: "Kantin Kampus - Pemesanan Makanan & Minuman Online",
+  description: "Aplikasi PWA Pemesanan Kantin Kampus Modern, Cepat, dan Praktis untuk mahasiswa dan pengelola kantin.",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Kantin Sekolah",
+    title: "Kantin Kampus",
   },
 };
 

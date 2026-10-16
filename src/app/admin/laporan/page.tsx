@@ -10,28 +10,40 @@ import {
   ShoppingBag,
   TrendingUp,
   Store,
+  Printer,
+  Receipt,
+  X,
+  Wallet,
 } from "lucide-react";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { DataService } from "@/lib/data-service";
 import { Kantin, MenuItem, Order, Transaction } from "@/types";
 import { formatRupiah, formatTanggal } from "@/lib/utils";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function AdminLaporanPage() {
+  const { isPengelolaKantin, managedKantinId, managedKantinNama, userProfile } = useAuth();
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [kantinList, setKantinList] = useState<Kantin[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
-  const [selectedKantinId, setSelectedKantinId] = useState("semua");
+  const [selectedKantinId, setSelectedKantinId] = useState(
+    isPengelolaKantin && managedKantinId ? managedKantinId : "semua"
+  );
   const [selectedStatus, setSelectedStatus] = useState("semua");
   const [selectedMetode, setSelectedMetode] = useState("semua");
-  const [selectedDateRange, setSelectedDateRange] = useState("semua");
+  const [selectedDateRange, setSelectedDateRange] = useState("hari_ini");
+
+  // Z-Report Modal
+  const [showZReportModal, setShowZReportModal] = useState(false);
 
   const loadData = async () => {
     await DataService.initIfEmpty();
     const [o, k, t] = await Promise.all([
-      DataService.getOrders(),
+      DataService.getOrders(isPengelolaKantin && managedKantinId ? { kantinId: managedKantinId } : undefined),
       DataService.getKantinList(),
       DataService.getTransactions(),
     ]);
@@ -42,8 +54,11 @@ export default function AdminLaporanPage() {
   };
 
   useEffect(() => {
+    if (isPengelolaKantin && managedKantinId) {
+      setSelectedKantinId(managedKantinId);
+    }
     loadData();
-  }, []);
+  }, [isPengelolaKantin, managedKantinId]);
 
   const filteredOrders = orders.filter((o) => {
     const matchKantin = selectedKantinId === "semua" || o.kantinId === selectedKantinId;
@@ -99,23 +114,29 @@ export default function AdminLaporanPage() {
   const handleExportCSV = () => {
     const headers = [
       "Kode Pesanan",
+      "Nomor Antrean",
       "Nama Pemesan",
       "Kantin",
       "Tanggal",
+      "Jadwal Pengambilan",
       "Status Pesanan",
       "Metode Pembayaran",
       "Status Pembayaran",
+      "Diskon Voucher",
       "Total Bayar",
     ];
 
     const rows = filteredOrders.map((o) => [
       o.kodePesanan,
+      o.nomorAntrean || "-",
       `"${o.namaPemesanSnapshot}"`,
       `"${o.namaKantinSnapshot}"`,
       formatTanggal(o.createdAt),
+      `"${o.labelPengambilan || "Langsung"}"`,
       o.statusPesanan,
       o.metodeTransaksi,
       o.statusTransaksi,
+      o.diskonVoucher || 0,
       o.totalHarga,
     ]);
 
@@ -128,12 +149,28 @@ export default function AdminLaporanPage() {
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `laporan-kantin-sekolah-${new Date().toISOString().slice(0, 10)}.csv`
+      `laporan-kantin-kampus-${new Date().toISOString().slice(0, 10)}.csv`
     );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  // Payment Breakdown
+  const totalCash = filteredOrders
+    .filter((o) => o.metodeTransaksi === "tunai" && o.statusTransaksi === "berhasil")
+    .reduce((s, o) => s + o.totalHarga, 0);
+
+  const totalQRIS = filteredOrders
+    .filter((o) => o.metodeTransaksi === "QRIS" && o.statusTransaksi === "berhasil")
+    .reduce((s, o) => s + o.totalHarga, 0);
+
+  const totalKantinPay = filteredOrders
+    .filter((o) => o.metodeTransaksi === "KantinPay" && o.statusTransaksi === "berhasil")
+    .reduce((s, o) => s + o.totalHarga, 0);
+
+  const totalDiskon = filteredOrders.reduce((s, o) => s + (o.diskonVoucher || 0), 0);
+  const totalPortions = bestSellers.reduce((s, i) => s + i.count, 0);
 
   return (
     <AdminLayout>
@@ -145,17 +182,27 @@ export default function AdminLaporanPage() {
               Laporan Penjualan & Keuangan
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Analisis performa penjualan kantin dan ekspor rekap ke format CSV
+              Analisis performa penjualan kantin, ekspor Excel/CSV, dan cetak rekap tutup kasir (Z-Report)
             </p>
           </div>
 
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#082215] hover:bg-[#05170e] text-emerald-400 font-extrabold text-xs rounded-2xl shadow-floating transition transform active:scale-95 border border-emerald-800/40"
-          >
-            <Download className="w-4 h-4" />
-            <span>Ekspor Laporan ke CSV</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowZReportModal(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs transition"
+            >
+              <Printer className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Cetak Z-Report Harian</span>
+            </button>
+
+            <button
+              onClick={handleExportCSV}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-[#16a34a] hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Ekspor Excel / CSV</span>
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -287,6 +334,152 @@ export default function AdminLaporanPage() {
             ))}
           </div>
         </div>
+
+        {/* Thermal Z-Report Receipt Modal */}
+        {showZReportModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-fade-in border border-gray-100 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center">
+                    <Printer className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-gray-900">
+                      Rekap Tutup Kasir (Z-Report)
+                    </h3>
+                    <p className="text-[10px] text-gray-400">Ringkasan settlement shift harian</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowZReportModal(false)}
+                  className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Thermal Receipt Paper */}
+              <div className="flex-1 overflow-y-auto bg-gray-50 p-4 rounded-2xl border border-gray-200 font-mono text-[11px] text-gray-800 space-y-2.5 shadow-inner">
+                <div className="text-center space-y-0.5">
+                  <p className="font-extrabold text-xs tracking-wider text-gray-900">KANTIN KAMPUS DIGITAL</p>
+                  <p className="text-[10px] text-gray-500">LAPORAN REKAP TUTUP KASIR (Z-REPORT)</p>
+                  <p className="text-[10px] text-gray-400">------------------------------------</p>
+                </div>
+
+                <div className="space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Kantin:</span>
+                    <span className="font-bold text-gray-900">
+                      {isPengelolaKantin && managedKantinNama
+                        ? managedKantinNama
+                        : selectedKantinId !== "semua"
+                        ? kantinList.find((k) => k.id === selectedKantinId)?.namaKantin || "Kantin"
+                        : "Semua Kantin (Global)"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Tanggal:</span>
+                    <span>{new Date().toLocaleDateString("id-ID", { dateStyle: "full" })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Kasir/Admin:</span>
+                    <span className="font-bold">{userProfile?.namaPemesan || "Admin"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Filter Jadwal:</span>
+                    <span className="capitalize">{selectedDateRange.replace("_", " ")}</span>
+                  </div>
+                </div>
+
+                <p className="text-gray-300 text-center">------------------------------------</p>
+
+                {/* Sales Summary */}
+                <div className="space-y-1">
+                  <p className="font-extrabold text-gray-900 uppercase">RINGKASAN PENJUALAN:</p>
+                  <div className="flex justify-between">
+                    <span>Order Berhasil</span>
+                    <span className="font-bold">{completedOrders} trx</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Porsi Terjual</span>
+                    <span className="font-bold">{totalPortions} porsi</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total Omzet Kotor</span>
+                    <span className="font-bold">{formatRupiah(totalRevenue + totalDiskon)}</span>
+                  </div>
+                  {totalDiskon > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>Diskon Voucher</span>
+                      <span className="font-bold">-{formatRupiah(totalDiskon)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs font-black text-[#16a34a] pt-1 border-t border-dashed border-gray-300">
+                    <span>TOTAL BERSIH (NET)</span>
+                    <span>{formatRupiah(totalRevenue)}</span>
+                  </div>
+                </div>
+
+                <p className="text-gray-300 text-center">------------------------------------</p>
+
+                {/* Payment Breakdown */}
+                <div className="space-y-1">
+                  <p className="font-extrabold text-gray-900 uppercase">RINCIAN METODE BAYAR:</p>
+                  <div className="flex justify-between">
+                    <span>1. Tunai (Kasir)</span>
+                    <span className="font-bold">{formatRupiah(totalCash)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>2. QRIS Online</span>
+                    <span className="font-bold">{formatRupiah(totalQRIS)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>3. KantinPay (Saldo)</span>
+                    <span className="font-bold text-emerald-700">{formatRupiah(totalKantinPay)}</span>
+                  </div>
+                </div>
+
+                <p className="text-gray-300 text-center">------------------------------------</p>
+
+                {/* Top Sellers */}
+                <div className="space-y-1">
+                  <p className="font-extrabold text-gray-900 uppercase">TOP MENU TERLARIS:</p>
+                  {bestSellers.slice(0, 5).map((it, idx) => (
+                    <div key={idx} className="flex justify-between text-[10px]">
+                      <span className="truncate pr-2">{idx + 1}. {it.name}</span>
+                      <span className="font-bold whitespace-nowrap">{it.count}x ({formatRupiah(it.revenue)})</span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-gray-300 text-center">------------------------------------</p>
+                <div className="text-center text-[9px] text-gray-400 space-y-0.5">
+                  <p>DICETAK SECARA OTOMATIS OLEH SISTEM</p>
+                  <p>{new Date().toLocaleString("id-ID")}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setShowZReportModal(false)}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition"
+                >
+                  Tutup
+                </button>
+                <button
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="flex-1 py-2.5 bg-[#16a34a] hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Struk Sekarang</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

@@ -34,7 +34,7 @@ export default function AdminKantinPage() {
     setEditingKantin(null);
     setKodeKantin(`K00${kantinList.length + 1}`);
     setNamaKantin("");
-    setAlamatKantin("Jl. Rambutan, Kantin Sekolah Blok A1");
+    setAlamatKantin("Gedung Kantin Kampus Utama Blok A1");
     setNoTlpKantin("081234567890");
     setIsActive(true);
     setIsModalOpen(true);
@@ -86,10 +86,10 @@ export default function AdminKantinPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-              Data Kantin Sekolah
+              Data Kantin Kampus
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Kelola daftar gerai/tenant kantin yang beroperasi di sekolah
+              Kelola daftar gerai/tenant kantin yang beroperasi di kampus
             </p>
           </div>
 
@@ -239,7 +239,7 @@ export default function AdminKantinPage() {
                   type="text"
                   value={alamatKantin}
                   onChange={(e) => setAlamatKantin(e.target.value)}
-                  placeholder="Contoh: Jl. Rambutan, Kantin Sekolah Blok A1"
+                  placeholder="Contoh: Gedung Kantin Kampus Utama Blok A1"
                   className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 text-xs font-semibold focus:ring-2 focus:ring-brand-500 outline-none"
                   required
                 />

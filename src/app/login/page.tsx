@@ -92,7 +92,7 @@ function LoginForm() {
             <AppLogo className="w-16 h-16 rounded-2xl shadow-floating" />
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900">
-            Kantin Sekolah
+            Kantin Kampus
           </h1>
           <p className="text-xs text-gray-500 mt-1">
             {redirectUrl === "/checkout"

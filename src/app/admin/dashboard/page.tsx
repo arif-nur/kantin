@@ -19,6 +19,7 @@ import AdminLayout from "@/components/admin/AdminLayout";
 import { DataService } from "@/lib/data-service";
 import { Kantin, MenuItem, Order, OrderStatus, Transaction, UserProfile } from "@/types";
 import { formatRupiah, formatTanggal } from "@/lib/utils";
+import { useAuth } from "@/lib/context/AuthContext";
 
 const STATUS_BADGES: Record<OrderStatus, { label: string; bg: string; text: string }> = {
   menunggu: { label: "Menunggu", bg: "bg-amber-100", text: "text-amber-800" },
@@ -30,6 +31,7 @@ const STATUS_BADGES: Record<OrderStatus, { label: string; bg: string; text: stri
 };
 
 export default function AdminDashboardPage() {
+  const { isPengelolaKantin, managedKantinId, managedKantinNama } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuList, setMenuList] = useState<MenuItem[]>([]);
   const [kantinList, setKantinList] = useState<Kantin[]>([]);
@@ -39,9 +41,10 @@ export default function AdminDashboardPage() {
 
   const loadData = async () => {
     await DataService.initIfEmpty();
+    const kantinParam = isPengelolaKantin && managedKantinId ? { kantinId: managedKantinId } : undefined;
     const [o, m, k, u, t] = await Promise.all([
-      DataService.getOrders(),
-      DataService.getMenuList(),
+      DataService.getOrders(kantinParam),
+      DataService.getMenuList(isPengelolaKantin ? managedKantinId || undefined : undefined),
       DataService.getKantinList(),
       DataService.getUsers(),
       DataService.getTransactions(),
@@ -58,7 +61,7 @@ export default function AdminDashboardPage() {
     loadData();
     const interval = setInterval(loadData, 10000); // 10s auto refresh
     return () => clearInterval(interval);
-  }, []);
+  }, [isPengelolaKantin, managedKantinId]);
 
   const totalOrdersToday = orders.length;
   const waitingOrders = orders.filter((o) => o.statusPesanan === "menunggu").length;
@@ -97,7 +100,7 @@ export default function AdminDashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-              Dashboard Kantin Sekolah
+              Dashboard Kantin Kampus
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
               Ringkasan operasional pesanan, stok menu, dan pendapatan hari ini
@@ -225,7 +228,7 @@ export default function AdminDashboardPage() {
                 <p className="text-xs text-gray-400">Tren pemesanan selama 7 hari terakhir</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 text-[11px] font-extrabold bg-[#082215] text-emerald-300 rounded-lg">
+                <span className="px-2.5 py-1 text-[11px] font-bold bg-slate-900 text-white rounded-lg">
                   Minggu Ini
                 </span>
               </div>
@@ -401,8 +404,13 @@ export default function AdminDashboardPage() {
                   return (
                     <tr key={order.id} className="hover:bg-gray-50/70 transition">
                       <td className="py-3 font-black text-gray-900">{order.kodePesanan}</td>
-                      <td className="py-3 font-bold text-gray-800">
-                        {order.namaPemesanSnapshot}
+                      <td className="py-3">
+                        <p className="font-bold text-gray-800">{order.namaPemesanSnapshot}</p>
+                        {order.labelPengambilan && (
+                          <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 mt-0.5 inline-block">
+                            ⏰ {order.labelPengambilan}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 text-gray-600">{order.namaKantinSnapshot}</td>
                       <td className="py-3 font-extrabold text-brand-700">
